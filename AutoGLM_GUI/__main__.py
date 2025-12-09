@@ -1,6 +1,7 @@
 """CLI entry point for AutoGLM-GUI."""
 
 import argparse
+import os
 import sys
 
 # Default configuration
@@ -50,7 +51,11 @@ def main() -> None:
 
     from AutoGLM_GUI import server
 
-    # Set model configuration for the server
+    # Set model configuration via environment variables (survives reload)
+    os.environ["AUTOGLM_BASE_URL"] = args.base_url
+    os.environ["AUTOGLM_MODEL_NAME"] = args.model
+
+    # Also set directly for non-reload mode
     server.DEFAULT_BASE_URL = args.base_url
     server.DEFAULT_MODEL_NAME = args.model
 

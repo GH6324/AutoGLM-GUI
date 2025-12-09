@@ -1,5 +1,6 @@
 """AutoGLM-GUI Backend API Server."""
 
+import os
 from importlib.metadata import version as get_version
 from importlib.resources import files
 from pathlib import Path
@@ -35,9 +36,9 @@ app.add_middleware(
 # 全局单例 agent
 agent: PhoneAgent | None = None
 
-# 默认配置 (由 __main__.py 设置)
-DEFAULT_BASE_URL: str = ""
-DEFAULT_MODEL_NAME: str = "autoglm-phone-9b"
+# 默认配置 (优先从环境变量读取，支持 reload 模式)
+DEFAULT_BASE_URL: str = os.getenv("AUTOGLM_BASE_URL", "")
+DEFAULT_MODEL_NAME: str = os.getenv("AUTOGLM_MODEL_NAME", "autoglm-phone-9b")
 
 
 # 请求/响应模型
@@ -112,7 +113,7 @@ async def init_agent(request: InitRequest) -> dict:
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+def chat(request: ChatRequest) -> ChatResponse:
     """发送任务给 Agent 并执行。"""
     global agent
 
@@ -155,7 +156,7 @@ async def reset_agent() -> dict:
 
 
 @app.post("/api/screenshot", response_model=ScreenshotResponse)
-async def take_screenshot(request: ScreenshotRequest) -> ScreenshotResponse:
+def take_screenshot(request: ScreenshotRequest) -> ScreenshotResponse:
     """获取设备截图。此操作无副作用，不影响 PhoneAgent 运行。"""
     try:
         screenshot = get_screenshot(device_id=request.device_id)
