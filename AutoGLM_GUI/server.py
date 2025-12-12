@@ -368,8 +368,15 @@ async def video_stream_ws(websocket: WebSocket):
                 return
         else:
             print("[video/stream] Reusing existing streamer instance")
-            # Note: No need to send cached init data manually
-            # ScrcpyStreamer automatically prepends SPS/PPS before each IDR frame
+
+            # Send cached initialization data FIRST to ensure new client can decode
+            # This solves the "reconnect black screen" problem
+            init_data = scrcpy_streamer.get_initialization_data()
+            if init_data:
+                await websocket.send_bytes(init_data)
+                print(f"[video/stream] ✓ Sent cached init data ({len(init_data)} bytes) to new connection")
+            else:
+                print("[video/stream] ⚠ Warning: No cached init data available yet, client may experience delay")
 
     # Stream H.264 data to client
     stream_failed = False

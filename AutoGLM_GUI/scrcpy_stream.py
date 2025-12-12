@@ -14,7 +14,7 @@ class ScrcpyStreamer:
         self,
         device_id: str | None = None,
         max_size: int = 1280,
-        bit_rate: int = 2_000_000,
+        bit_rate: int = 1_000_000,
         port: int = 27183,
     ):
         """Initialize ScrcpyStreamer.
@@ -35,9 +35,12 @@ class ScrcpyStreamer:
         self.forward_cleanup_needed = False
 
         # H.264 parameter sets cache (for new connections to join mid-stream)
+        # IMPORTANT: Only cache INITIAL complete SPS/PPS from stream start
+        # Later SPS/PPS may be truncated across chunks
         self.cached_sps: bytes | None = None
         self.cached_pps: bytes | None = None
         self.cached_idr: bytes | None = None  # Last IDR frame for immediate playback
+        self.cache_locked = False  # Lock cache after initial complete SPS/PPS
 
         # Find scrcpy-server location
         self.scrcpy_server_path = self._find_scrcpy_server()
@@ -231,6 +234,14 @@ class ScrcpyStreamer:
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.tcp_socket.settimeout(5)
 
+        # Increase socket buffer size for high-resolution video
+        # Default is often 64KB, but complex frames can be 200-500KB
+        try:
+            self.tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 * 1024 * 1024)  # 2MB
+            print("[ScrcpyStreamer] Set socket receive buffer to 2MB")
+        except OSError as e:
+            print(f"[ScrcpyStreamer] Warning: Failed to set socket buffer size: {e}")
+
         # Retry connection
         for _ in range(5):
             try:
@@ -287,68 +298,99 @@ class ScrcpyStreamer:
         return nal_units
 
     def _cache_nal_units(self, data: bytes) -> None:
-        """Parse and cache important NAL units (SPS, PPS, IDR)."""
+        """Parse and cache INITIAL complete NAL units (SPS, PPS, IDR).
+
+        IMPORTANT: Only caches complete SPS/PPS from stream start.
+        NAL units may be truncated across chunks, so we validate minimum sizes
+        and lock the cache after getting complete initial parameters.
+        """
+        # Don't update cache if already locked (have complete initial SPS/PPS)
+        if self.cache_locked:
+            return
+
         nal_units = self._find_nal_units(data)
 
         for start, nal_type, size in nal_units:
             nal_data = data[start:start+size]
 
             if nal_type == 7:  # SPS
-                if self.cached_sps != nal_data:
+                # Validate: SPS should be at least 10 bytes (起始码4 + NAL header1 + 数据5+)
+                # Typical SPS is 20-50 bytes
+                if size >= 10 and not self.cached_sps:
                     self.cached_sps = nal_data
-                    print(f"[ScrcpyStreamer] Cached SPS ({size} bytes)")
+                    hex_preview = ' '.join(f'{b:02x}' for b in nal_data[:min(12, len(nal_data))])
+                    print(f"[ScrcpyStreamer] ✓ Cached complete SPS ({size} bytes): {hex_preview}...")
+                elif size < 10:
+                    print(f"[ScrcpyStreamer] ✗ Skipped truncated SPS ({size} bytes, too short)")
+
             elif nal_type == 8:  # PPS
-                if self.cached_pps != nal_data:
+                # Validate: PPS should be at least 6 bytes
+                # Typical PPS is 10-30 bytes
+                if size >= 6 and not self.cached_pps:
                     self.cached_pps = nal_data
-                    print(f"[ScrcpyStreamer] Cached PPS ({size} bytes)")
+                    hex_preview = ' '.join(f'{b:02x}' for b in nal_data[:min(12, len(nal_data))])
+                    print(f"[ScrcpyStreamer] ✓ Cached complete PPS ({size} bytes): {hex_preview}...")
+                elif size < 6:
+                    print(f"[ScrcpyStreamer] ✗ Skipped truncated PPS ({size} bytes, too short)")
+
             elif nal_type == 5:  # IDR frame
-                # Only cache if we have SPS/PPS
-                if self.cached_sps and self.cached_pps:
+                # Only cache if we have complete SPS/PPS
+                if self.cached_sps and self.cached_pps and not self.cached_idr:
                     self.cached_idr = nal_data
-                    # print(f"[ScrcpyStreamer] Cached IDR frame ({size} bytes)")  # Too verbose
+                    print(f"[ScrcpyStreamer] ✓ Cached IDR frame ({size} bytes)")
+
+        # Lock cache once we have complete SPS + PPS + IDR
+        if self.cached_sps and self.cached_pps and self.cached_idr and not self.cache_locked:
+            self.cache_locked = True
+            print("[ScrcpyStreamer] 🔒 Cache locked - initial parameter sets complete")
 
     def _prepend_sps_pps_to_idr(self, data: bytes) -> bytes:
-        """Prepend SPS/PPS before each IDR frame to ensure decodability.
+        """Prepend SPS/PPS before EVERY IDR frame unconditionally.
 
         This ensures that clients can start decoding from any IDR frame,
-        even if they join mid-stream.
+        even if they join mid-stream. We always prepend to guarantee
+        that every IDR is self-contained.
 
         Returns:
-            Modified data with SPS/PPS prepended to IDR frames
+            Modified data with SPS/PPS prepended to all IDR frames
         """
         if not self.cached_sps or not self.cached_pps:
             return data
 
         nal_units = self._find_nal_units(data)
-
-        # Find IDR frames and check for existing SPS/PPS
-        idr_positions = []
-        has_sps = False
-        has_pps = False
-
-        for start, nal_type, size in nal_units:
-            if nal_type == 7:
-                has_sps = True
-            elif nal_type == 8:
-                has_pps = True
-            elif nal_type == 5:  # IDR frame
-                idr_positions.append(start)
-
-        # If no IDR or already has SPS/PPS, return original data
-        if not idr_positions or (has_sps and has_pps):
+        if not nal_units:
             return data
 
-        # Prepend SPS/PPS before first IDR frame
-        first_idr_pos = idr_positions[0]
-        modified_data = (
-            data[:first_idr_pos] +           # Data before IDR
-            self.cached_sps +                 # Insert SPS
-            self.cached_pps +                 # Insert PPS
-            data[first_idr_pos:]             # IDR and rest of data
-        )
+        # Find all IDR frames
+        idr_positions = [(start, size) for start, nal_type, size in nal_units if nal_type == 5]
 
-        print(f"[ScrcpyStreamer] Prepended SPS/PPS before IDR frame")
-        return modified_data
+        if not idr_positions:
+            return data
+
+        # Build modified data by prepending SPS/PPS before each IDR
+        result = bytearray()
+        last_pos = 0
+        sps_pps = self.cached_sps + self.cached_pps
+
+        for idr_start, idr_size in idr_positions:
+            # Add data before this IDR
+            result.extend(data[last_pos:idr_start])
+
+            # Check if SPS/PPS already exists right before this IDR
+            # (to avoid duplicating if scrcpy already sent them)
+            prepend_offset = max(0, idr_start - len(sps_pps))
+            if data[prepend_offset:idr_start] != sps_pps:
+                # Prepend SPS/PPS before this IDR
+                result.extend(sps_pps)
+                print(f"[ScrcpyStreamer] Prepended SPS/PPS before IDR at position {idr_start}")
+
+            # Update position to start of IDR
+            last_pos = idr_start
+
+        # Add remaining data (including all IDR frames and data after)
+        result.extend(data[last_pos:])
+
+        return bytes(result)
 
     def get_initialization_data(self) -> bytes | None:
         """Get cached SPS/PPS/IDR for initializing new connections.
@@ -378,21 +420,31 @@ class ScrcpyStreamer:
 
         try:
             # Use asyncio to make socket read non-blocking
+            # Read up to 512KB at once for high-quality frames
             loop = asyncio.get_event_loop()
-            data = await loop.run_in_executor(None, self.tcp_socket.recv, 65536)
+            data = await loop.run_in_executor(None, self.tcp_socket.recv, 512 * 1024)
 
             if not data:
                 raise ConnectionError("Socket closed by remote")
 
-            # Cache SPS/PPS/IDR for future use
+            # Log large chunks (might indicate complex frames)
+            if len(data) > 200 * 1024:  # > 200KB
+                print(f"[ScrcpyStreamer] Large chunk received: {len(data) / 1024:.1f} KB")
+
+            # Cache INITIAL complete SPS/PPS/IDR for future use
+            # (Later chunks may have truncated NAL units, so we only cache once)
             self._cache_nal_units(data)
 
-            # Automatically prepend SPS/PPS before IDR frames
-            # This ensures clients can decode from any IDR frame
-            data = self._prepend_sps_pps_to_idr(data)
+            # NOTE: We don't automatically prepend SPS/PPS here because:
+            # 1. NAL units may be truncated across chunks
+            # 2. Prepending truncated SPS/PPS causes decoding errors
+            # 3. Instead, we send cached complete SPS/PPS when new connections join
 
             return data
+        except ConnectionError:
+            raise
         except Exception as e:
+            print(f"[ScrcpyStreamer] Unexpected error in read_h264_chunk: {type(e).__name__}: {e}")
             raise ConnectionError(f"Failed to read from socket: {e}") from e
 
     def stop(self) -> None:

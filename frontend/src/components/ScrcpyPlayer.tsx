@@ -16,23 +16,69 @@ export function ScrcpyPlayer({ className, onFallback, fallbackTimeout = 5000 }: 
   const fallbackTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hasReceivedDataRef = useRef(false);
 
+  // Use ref to store latest callback to avoid useEffect re-running
+  const onFallbackRef = useRef(onFallback);
+  const fallbackTimeoutRef = useRef(fallbackTimeout);
+
+  // Update refs when props change (without triggering useEffect)
+  useEffect(() => {
+    onFallbackRef.current = onFallback;
+    fallbackTimeoutRef.current = fallbackTimeout;
+  }, [onFallback, fallbackTimeout]);
+
   useEffect(() => {
     let reconnectTimeout: NodeJS.Timeout | null = null;
 
     const connect = () => {
       if (!videoRef.current) return;
 
+      console.log('[ScrcpyPlayer] connect() called');
       setStatus('connecting');
       setErrorMessage(null);
 
+      // CRITICAL: Close existing WebSocket before creating new one
+      // This prevents duplicate connections
+      if (wsRef.current) {
+        console.log('[ScrcpyPlayer] Closing existing WebSocket');
+        try {
+          // Remove event handlers to prevent onclose from triggering reconnect
+          wsRef.current.onclose = null;
+          wsRef.current.onerror = null;
+          wsRef.current.onmessage = null;
+          wsRef.current.close();
+        } catch (error) {
+          console.error('[ScrcpyPlayer] Error closing old WebSocket:', error);
+        }
+        wsRef.current = null;
+      }
+
+      // CRITICAL: Destroy old jMuxer instance before creating new one
+      // This prevents multiple jMuxer instances fighting over the same video element
+      if (jmuxerRef.current) {
+        console.log('[ScrcpyPlayer] Destroying old jMuxer instance');
+        try {
+          jmuxerRef.current.destroy();
+        } catch (error) {
+          console.error('[ScrcpyPlayer] Error destroying old jMuxer:', error);
+        }
+        jmuxerRef.current = null;
+      }
+
+      // Reset video element to clean state
+      if (videoRef.current) {
+        videoRef.current.src = '';
+        videoRef.current.load();
+      }
+
       try {
-        // Initialize jMuxer with optimized settings
+        // Initialize fresh jMuxer with optimized settings
+        console.log('[ScrcpyPlayer] Creating new jMuxer instance');
         jmuxerRef.current = new jMuxer({
           node: videoRef.current,
           mode: 'video',
           flushingTime: 100, // Small buffer to handle jitter
           fps: 30,
-          debug: true,
+          debug: false,  // Disable debug to reduce console noise
           clearBuffer: false, // Don't clear buffer on errors
           onError: (error: any) => {
             console.error('[jMuxer] Decoder error:', error);
@@ -57,11 +103,11 @@ export function ScrcpyPlayer({ className, onFallback, fallbackTimeout = 5000 }: 
               setStatus('error');
               setErrorMessage('Video stream timeout');
               ws.close();
-              if (onFallback) {
-                onFallback();
+              if (onFallbackRef.current) {
+                onFallbackRef.current();
               }
             }
-          }, fallbackTimeout);
+          }, fallbackTimeoutRef.current);
         };
 
         ws.onmessage = (event) => {
@@ -74,8 +120,8 @@ export function ScrcpyPlayer({ className, onFallback, fallbackTimeout = 5000 }: 
               setStatus('error');
 
               // Trigger fallback on error
-              if (onFallback && !hasReceivedDataRef.current) {
-                onFallback();
+              if (onFallbackRef.current && !hasReceivedDataRef.current) {
+                onFallbackRef.current();
               }
             } catch {
               console.error('[ScrcpyPlayer] Received non-JSON string:', event.data);
@@ -155,7 +201,7 @@ export function ScrcpyPlayer({ className, onFallback, fallbackTimeout = 5000 }: 
         jmuxerRef.current = null;
       }
     };
-  }, [fallbackTimeout, onFallback]);
+  }, []); // Empty deps: only run once on mount
 
   return (
     <div className={`relative w-full h-full flex items-center justify-center ${className || ''}`}>
