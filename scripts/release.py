@@ -138,7 +138,14 @@ def git_commit_version(version: str, dry_run: bool = False) -> bool:
     try:
         # Stage pyproject.toml and electron/package.json
         result = subprocess.run(
-            ["git", "add", "pyproject.toml", "electron/package.json", "uv.lock"],
+            [
+                "git",
+                "add",
+                "pyproject.toml",
+                "electron/package.json",
+                "electron/package-lock.json",
+                "uv.lock",
+            ],
             cwd=ROOT_DIR,
             capture_output=True,
             text=True,

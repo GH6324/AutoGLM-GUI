@@ -71,3 +71,177 @@ jobs:
         run: gh release upload --clobber ${{ steps.version.outputs.TAG_NAME }} dist/*.tar.gz dist/*.whl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Build Electron application for macOS
+  build-electron-macos:
+    name: Build Electron (macOS ARM64)
+    runs-on: macos-latest
+    needs: release
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: 'frontend/pnpm-lock.yaml'
+
+      - name: Get pnpm store directory
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Build Electron application
+        run: uv run python scripts/build_electron.py
+
+      - name: Get version
+        id: version
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Find and upload macOS artifacts
+        run: |
+          # Find DMG file
+          dmg_file=$(find electron/dist -type f -name "*.dmg" ! -name "*.blockmap" | head -n 1)
+          if [ -n "$dmg_file" ]; then
+            echo "Uploading DMG: $(basename "$dmg_file")"
+            gh release upload --clobber ${{ steps.version.outputs.TAG_NAME }} "$dmg_file"
+          fi
+
+          # Find blockmap file
+          blockmap_file=$(find electron/dist -type f -name "*.dmg.blockmap" | head -n 1)
+          if [ -n "$blockmap_file" ]; then
+            echo "Uploading blockmap: $(basename "$blockmap_file")"
+            gh release upload --clobber ${{ steps.version.outputs.TAG_NAME }} "$blockmap_file"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Build Electron application for Windows
+  build-electron-windows:
+    name: Build Electron (Windows x64)
+    runs-on: windows-latest
+    needs: release
+    permissions:
+      contents: write
+
+    env:
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        shell: pwsh
+        run: |
+          irm https://astral.sh/uv/install.ps1 | iex
+          echo "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: 'frontend/pnpm-lock.yaml'
+
+      - name: Get pnpm store directory
+        shell: pwsh
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $env:GITHUB_ENV
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Build Electron application
+        run: uv run python scripts/build_electron.py
+
+      - name: Get version
+        id: version
+        shell: pwsh
+        run: |
+          $tagName = $env:GITHUB_REF -replace '^refs/tags/', ''
+          echo "TAG_NAME=$tagName" >> $env:GITHUB_OUTPUT
+
+      - name: Find and upload Windows artifacts
+        shell: pwsh
+        run: |
+          # Find portable exe (not containing "Setup")
+          $portableExe = Get-ChildItem -Path electron\dist -Filter *.exe -File | Where-Object { $_.Name -notmatch "Setup" } | Select-Object -First 1
+          if ($portableExe) {
+            Write-Host "Uploading portable: $($portableExe.Name)"
+            gh release upload --clobber ${{ steps.version.outputs.TAG_NAME }} $portableExe.FullName
+          }
+
+          # Find setup exe (containing "Setup")
+          $setupExe = Get-ChildItem -Path electron\dist -Filter *.exe -File | Where-Object { $_.Name -match "Setup" } | Select-Object -First 1
+          if ($setupExe) {
+            Write-Host "Uploading setup: $($setupExe.Name)"
+            gh release upload --clobber ${{ steps.version.outputs.TAG_NAME }} $setupExe.FullName
+          }
+
+          # Find blockmap
+          $blockmap = Get-ChildItem -Path electron\dist -Filter *.exe.blockmap -File | Select-Object -First 1
+          if ($blockmap) {
+            Write-Host "Uploading blockmap: $($blockmap.Name)"
+            gh release upload --clobber ${{ steps.version.outputs.TAG_NAME }} $blockmap.FullName
+          }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
