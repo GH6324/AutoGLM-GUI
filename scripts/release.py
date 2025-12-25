@@ -171,10 +171,10 @@ def update_readme_download_links(new_version: str) -> bool:
         )
 
         # Update Linux tar.gz download link
-        # Pattern: /releases/download/v{VERSION}/AutoGLM.GUI-{VERSION}.tar.gz
+        # Pattern: /releases/download/v{VERSION}/autoglm-gui-{VERSION}.tar.gz
         content = re.sub(
-            r"/releases/download/v[\d.]+/AutoGLM\.GUI-[\d.]+\.tar\.gz",
-            f"/releases/download/v{new_version}/AutoGLM.GUI-{new_version}.tar.gz",
+            r"/releases/download/v[\d.]+/autoglm-gui-[\d.]+\.tar\.gz",
+            f"/releases/download/v{new_version}/autoglm-gui-{new_version}.tar.gz",
             content,
         )
 
