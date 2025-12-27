@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from AutoGLM_GUI.config import config
 from AutoGLM_GUI.phone_agent_patches import apply_patches
 from AutoGLM_GUI.schemas import (
+    AbortRequest,
     APIAgentConfig,
     APIModelConfig,
     ChatRequest,
@@ -36,6 +37,11 @@ from phone_agent.model import ModelConfig
 apply_patches()
 
 router = APIRouter()
+
+# Active chat sessions (device_id -> stop_event)
+# Used for aborting ongoing conversations
+_active_chats: dict[str, threading.Event] = {}
+_active_chats_lock = threading.Lock()
 
 
 def _release_device_lock_when_done(
@@ -212,6 +218,10 @@ def chat_stream(request: ChatRequest):
             threads: list[threading.Thread] = []
             stop_event = threading.Event()
 
+            # Register stop_event to global mapping for abort support
+            with _active_chats_lock:
+                _active_chats[device_id] = stop_event
+
             try:
                 # Create a queue to collect events from the agent
                 event_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
@@ -248,18 +258,40 @@ def chat_stream(request: ChatRequest):
 
                 streaming_agent.model_client.request = patched_request
 
+                # Early abort check (before starting any steps)
+                if stop_event.is_set():
+                    logger.info(
+                        f"[Abort] Agent for device {device_id} received abort signal before starting steps"
+                    )
+                    yield "event: aborted\n"
+                    yield 'data: {"type": "aborted", "message": "Chat aborted by user"}\n\n'
+                    return
+
                 # Run agent step in a separate thread
                 step_result: list[Any] = [None]
                 error_result: list[Any] = [None]
 
                 def run_step(is_first: bool = True, task: str | None = None):
                     try:
+                        # Check before starting step
                         if stop_event.is_set():
+                            logger.info(
+                                f"[Abort] Agent for device {device_id} received abort signal before step execution"
+                            )
                             return
+
                         if is_first:
                             result = streaming_agent.step(task)
                         else:
                             result = streaming_agent.step()
+
+                        # Check after step completes
+                        if stop_event.is_set():
+                            logger.info(
+                                f"[Abort] Agent for device {device_id} received abort signal after step execution"
+                            )
+                            return
+
                         step_result[0] = result
                     except Exception as e:
                         error_result[0] = e
@@ -278,6 +310,9 @@ def chat_stream(request: ChatRequest):
                     try:
                         event_type, event_data = event_queue.get(timeout=0.1)
                     except queue.Empty:
+                        # Check again on timeout
+                        if stop_event.is_set():
+                            break
                         continue
 
                     if event_type == "thinking_chunk":
@@ -336,6 +371,14 @@ def chat_stream(request: ChatRequest):
                         thread.start()
                         threads.append(thread)
 
+                # Check if loop exited due to abort
+                if stop_event.is_set():
+                    logger.info(
+                        f"[Abort] Agent for device {device_id} event loop terminated due to abort signal"
+                    )
+                    yield "event: aborted\n"
+                    yield 'data: {"type": "aborted", "message": "Chat aborted by user"}\n\n'
+
                 # Update original agent state (thread-safe due to device lock)
                 original_agent._context = streaming_agent._context
                 original_agent._step_count = streaming_agent._step_count
@@ -350,6 +393,10 @@ def chat_stream(request: ChatRequest):
                 yield "event: error\n"
                 yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
             finally:
+                # Clean up active chats mapping
+                with _active_chats_lock:
+                    _active_chats.pop(device_id, None)
+
                 # Signal all threads to stop
                 stop_event.set()
 
@@ -428,6 +475,23 @@ def reset_agent(request: ResetRequest) -> dict:
         }
     except AgentNotInitializedError:
         raise HTTPException(status_code=404, detail=f"Device {device_id} not found")
+
+
+@router.post("/api/chat/abort")
+def abort_chat(request: AbortRequest) -> dict:
+    """中断正在进行的对话流。"""
+    from AutoGLM_GUI.logger import logger
+
+    device_id = request.device_id
+
+    with _active_chats_lock:
+        if device_id in _active_chats:
+            logger.info(f"Aborting chat for device {device_id}")
+            _active_chats[device_id].set()  # 设置中断标志
+            return {"success": True, "message": "Abort requested"}
+        else:
+            logger.warning(f"No active chat found for device {device_id}")
+            return {"success": False, "message": "No active chat found"}
 
 
 @router.get("/api/config", response_model=ConfigResponse)
