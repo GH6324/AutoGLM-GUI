@@ -71,11 +71,13 @@ export interface ScreenshotResponse {
 
 export interface ThinkingChunkEvent {
   type: 'thinking_chunk';
+  role: 'assistant';
   chunk: string;
 }
 
 export interface StepEvent {
   type: 'step';
+  role: 'assistant';
   step: number;
   thinking: string;
   action: Record<string, unknown>;
@@ -85,6 +87,7 @@ export interface StepEvent {
 
 export interface DoneEvent {
   type: 'done';
+  role: 'assistant';
   message: string;
   steps: number;
   success: boolean;
@@ -92,6 +95,13 @@ export interface DoneEvent {
 
 export interface ErrorEvent {
   type: 'error';
+  role: 'assistant';
+  message: string;
+}
+
+export interface AbortedEvent {
+  type: 'aborted';
+  role: 'assistant';
   message: string;
 }
 
@@ -99,7 +109,8 @@ export type StreamEvent =
   | ThinkingChunkEvent
   | StepEvent
   | DoneEvent
-  | ErrorEvent;
+  | ErrorEvent
+  | AbortedEvent;
 
 export interface TapRequest {
   x: number;
@@ -295,7 +306,7 @@ export function sendMessageStream(
   onStep: (event: StepEvent) => void,
   onDone: (event: DoneEvent) => void,
   onError: (event: ErrorEvent) => void,
-  onAborted?: (event: { type: 'aborted'; message: string }) => void
+  onAborted?: (event: AbortedEvent) => void
 ): { close: () => void } {
   const controller = new AbortController();
 
@@ -350,7 +361,7 @@ export function sendMessageStream(
               } else if (eventType === 'aborted') {
                 console.log('[SSE] Received aborted event:', data);
                 if (onAborted) {
-                  onAborted(data as { type: 'aborted'; message: string });
+                  onAborted(data as AbortedEvent);
                 }
               } else if (eventType === 'error') {
                 console.log('[SSE] Received error event:', data);
@@ -367,10 +378,14 @@ export function sendMessageStream(
       if (error.name === 'AbortError') {
         // User manually aborted the connection
         if (onAborted) {
-          onAborted({ type: 'aborted', message: 'Connection aborted by user' });
+          onAborted({
+            type: 'aborted',
+            role: 'assistant',
+            message: 'Connection aborted by user',
+          });
         }
       } else {
-        onError({ type: 'error', message: error.message });
+        onError({ type: 'error', role: 'assistant', message: error.message });
       }
     });
 
