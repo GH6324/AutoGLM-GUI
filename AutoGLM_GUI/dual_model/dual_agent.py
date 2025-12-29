@@ -7,18 +7,23 @@
 import hashlib
 import time
 import threading
-from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from dataclasses import dataclass
+from typing import Callable, Optional
 from queue import Queue
 
 from phone_agent.model.client import ModelConfig
 
 from AutoGLM_GUI.logger import logger
-from .decision_model import DecisionModel, Decision, TaskPlan, ActionSequence, ActionStep
+from .decision_model import (
+    DecisionModel,
+    Decision,
+    TaskPlan,
+    ActionSequence,
+    ActionStep,
+)
 from .vision_model import VisionModel, ScreenDescription, ExecutionResult
 from .protocols import (
     DecisionModelConfig,
-    DualModelConfig,
     DualModelState,
     DualModelEvent,
     DualModelEventType,
@@ -38,7 +43,9 @@ class DualModelCallbacks:
     on_decision_thinking: Optional[Callable[[str], None]] = None
     on_decision_result: Optional[Callable[[Decision], None]] = None
     on_task_plan: Optional[Callable[[TaskPlan], None]] = None
-    on_content_generation: Optional[Callable[[str, str], None]] = None  # (content, purpose)
+    on_content_generation: Optional[Callable[[str, str], None]] = (
+        None  # (content, purpose)
+    )
 
     # 小模型回调
     on_vision_start: Optional[Callable[[], None]] = None
@@ -55,6 +62,7 @@ class DualModelCallbacks:
 @dataclass
 class StepResult:
     """单步执行结果"""
+
     step: int
     success: bool
     finished: bool
@@ -67,6 +75,7 @@ class StepResult:
 @dataclass
 class AnomalyState:
     """异常状态追踪"""
+
     consecutive_failures: int = 0
     consecutive_same_screen: int = 0
     last_screenshot_hash: str = ""
@@ -116,16 +125,18 @@ class AnomalyState:
     def has_anomaly(self) -> bool:
         """是否存在异常"""
         return (
-            self.consecutive_failures >= self.max_failures or
-            self.consecutive_same_screen >= self.max_same_screen or
-            self.repeated_actions >= self.max_repeated_actions
+            self.consecutive_failures >= self.max_failures
+            or self.consecutive_same_screen >= self.max_same_screen
+            or self.repeated_actions >= self.max_repeated_actions
         )
 
     def get_error_context(self) -> str:
         """生成异常上下文描述"""
         contexts = []
         if self.consecutive_same_screen >= 2:
-            contexts.append(f"⚠️ 屏幕连续 {self.consecutive_same_screen} 次无变化，可能原因：网络延迟、点击未生效、页面加载中")
+            contexts.append(
+                f"⚠️ 屏幕连续 {self.consecutive_same_screen} 次无变化，可能原因：网络延迟、点击未生效、页面加载中"
+            )
         if self.consecutive_failures >= 2:
             contexts.append(f"⚠️ 连续 {self.consecutive_failures} 次操作失败")
         if self.repeated_actions >= 2:
@@ -183,9 +194,16 @@ class DualModelAgent:
         # 事件队列(用于SSE)
         self.event_queue: Queue[DualModelEvent] = Queue()
 
-        logger.info(f"双模型协调器初始化完成, 设备: {device_id}, 模式: {thinking_mode.value}")
+        logger.info(
+            f"双模型协调器初始化完成, 设备: {device_id}, 模式: {thinking_mode.value}"
+        )
 
-    def _emit_event(self, event_type: DualModelEventType, data: dict, model: Optional[ModelRole] = None):
+    def _emit_event(
+        self,
+        event_type: DualModelEventType,
+        data: dict,
+        model: Optional[ModelRole] = None,
+    ):
         """发送事件到队列"""
         event = DualModelEvent(
             type=event_type,
@@ -227,7 +245,9 @@ class DualModelAgent:
 
         try:
             # 1. 大模型分析任务
-            self._update_state(decision_stage=ModelStage.ANALYZING, decision_active=True)
+            self._update_state(
+                decision_stage=ModelStage.ANALYZING, decision_active=True
+            )
             self._emit_event(
                 DualModelEventType.DECISION_START,
                 {"stage": "analyzing", "task": task},
@@ -283,17 +303,25 @@ class DualModelAgent:
 
                 if step_result.finished:
                     finished = True
-                    last_message = step_result.decision.reasoning if step_result.decision else "任务完成"
+                    last_message = (
+                        step_result.decision.reasoning
+                        if step_result.decision
+                        else "任务完成"
+                    )
 
                 if self.callbacks.on_step_complete:
-                    self.callbacks.on_step_complete(self.step_count, step_result.success)
+                    self.callbacks.on_step_complete(
+                        self.step_count, step_result.success
+                    )
 
                 # 步骤间延迟
                 time.sleep(0.5)
 
             # 3. 完成
             success = finished
-            message = last_message if finished else f"达到最大步数限制({self.max_steps})"
+            message = (
+                last_message if finished else f"达到最大步数限制({self.max_steps})"
+            )
 
             self._emit_event(
                 DualModelEventType.TASK_COMPLETE,
@@ -331,7 +359,9 @@ class DualModelAgent:
         """
         try:
             # 1. 大模型一次性生成操作序列
-            self._update_state(decision_stage=ModelStage.ANALYZING, decision_active=True)
+            self._update_state(
+                decision_stage=ModelStage.ANALYZING, decision_active=True
+            )
             self._emit_event(
                 DualModelEventType.DECISION_START,
                 {"stage": "analyzing", "task": task, "mode": "turbo"},
@@ -350,7 +380,10 @@ class DualModelAgent:
             self.task_plan = self.action_sequence.to_plan()
             self._emit_event(
                 DualModelEventType.TASK_PLAN,
-                {"plan": self.task_plan.to_dict(), "actions": self.action_sequence.to_dict()},
+                {
+                    "plan": self.task_plan.to_dict(),
+                    "actions": self.action_sequence.to_dict(),
+                },
                 ModelRole.DECISION,
             )
 
@@ -386,7 +419,9 @@ class DualModelAgent:
 
                 self.step_count += 1
                 action = self.action_sequence.actions[self.current_action_index]
-                logger.info(f"[TURBO] 执行步骤 {self.step_count}: {action.action} -> {action.target}")
+                logger.info(
+                    f"[TURBO] 执行步骤 {self.step_count}: {action.action} -> {action.target}"
+                )
 
                 # 执行单步操作
                 step_result = self._execute_turbo_step(action)
@@ -398,11 +433,15 @@ class DualModelAgent:
                     # 检查是否需要重新规划
                     if self.anomaly_state.has_anomaly() and replan_count < max_replans:
                         replan_count += 1
-                        logger.info(f"[TURBO] 触发重新规划 ({replan_count}/{max_replans})")
+                        logger.info(
+                            f"[TURBO] 触发重新规划 ({replan_count}/{max_replans})"
+                        )
 
                         # 获取当前屏幕状态
                         screenshot_base64, _, _ = self.vision_model.capture_screenshot()
-                        screen_desc = self.vision_model.describe_screen(screenshot_base64)
+                        screen_desc = self.vision_model.describe_screen(
+                            screenshot_base64
+                        )
 
                         # 重新规划
                         new_sequence = self.decision_model.replan(
@@ -417,7 +456,9 @@ class DualModelAgent:
                             self.action_sequence = new_sequence
                             self.current_action_index = 0
                             self.anomaly_state.reset()
-                            logger.info(f"[TURBO] 重新规划成功，新增 {len(new_sequence.actions)} 个步骤")
+                            logger.info(
+                                f"[TURBO] 重新规划成功，新增 {len(new_sequence.actions)} 个步骤"
+                            )
                         else:
                             logger.warning("[TURBO] 重新规划返回空序列")
 
@@ -435,14 +476,18 @@ class DualModelAgent:
                     last_message = "任务完成"
 
                 if self.callbacks.on_step_complete:
-                    self.callbacks.on_step_complete(self.step_count, step_result.success)
+                    self.callbacks.on_step_complete(
+                        self.step_count, step_result.success
+                    )
 
                 # 步骤间短延迟
                 time.sleep(0.3)
 
             # 3. 完成
             success = finished
-            message = last_message if finished else f"达到最大步数限制({self.max_steps})"
+            message = (
+                last_message if finished else f"达到最大步数限制({self.max_steps})"
+            )
 
             self._emit_event(
                 DualModelEventType.TASK_COMPLETE,
@@ -485,7 +530,9 @@ class DualModelAgent:
             # 检查截图是否重复
             is_same_screen = self.anomaly_state.check_screenshot(screenshot_base64)
             if is_same_screen:
-                logger.warning(f"[TURBO] 屏幕连续 {self.anomaly_state.consecutive_same_screen} 次无变化")
+                logger.warning(
+                    f"[TURBO] 屏幕连续 {self.anomaly_state.consecutive_same_screen} 次无变化"
+                )
 
             self._update_state(
                 vision_stage=ModelStage.EXECUTING,
@@ -497,7 +544,9 @@ class DualModelAgent:
             content = action.content
             if action.need_generate and action.action == "type":
                 logger.info("[TURBO] 需要生成人性化内容，调用决策模型")
-                self._update_state(decision_stage=ModelStage.GENERATING, decision_active=True)
+                self._update_state(
+                    decision_stage=ModelStage.GENERATING, decision_active=True
+                )
                 self._emit_event(
                     DualModelEventType.DECISION_START,
                     {"stage": "generating", "content_type": action.target},
@@ -617,7 +666,9 @@ class DualModelAgent:
             # 检查截图是否重复
             is_same_screen = self.anomaly_state.check_screenshot(screenshot_base64)
             if is_same_screen:
-                logger.warning(f"屏幕连续 {self.anomaly_state.consecutive_same_screen} 次无变化")
+                logger.warning(
+                    f"屏幕连续 {self.anomaly_state.consecutive_same_screen} 次无变化"
+                )
 
             screen_desc = self.vision_model.describe_screen(screenshot_base64)
 
@@ -658,7 +709,7 @@ class DualModelAgent:
             error_context = self.anomaly_state.get_error_context()
             if error_context:
                 task_context += f"\n\n{DECISION_ERROR_CONTEXT_TEMPLATE.format(error_context=error_context)}"
-                logger.info(f"添加异常上下文到决策请求")
+                logger.info("添加异常上下文到决策请求")
 
             # 调用决策模型
             decision = self.decision_model.make_decision(
@@ -670,9 +721,13 @@ class DualModelAgent:
 
             # 检查是否重复操作
             if decision.action and decision.target:
-                is_repeated = self.anomaly_state.check_action(decision.action, decision.target)
+                is_repeated = self.anomaly_state.check_action(
+                    decision.action, decision.target
+                )
                 if is_repeated:
-                    logger.warning(f"操作重复 {self.anomaly_state.repeated_actions} 次: {decision.action} -> {decision.target}")
+                    logger.warning(
+                        f"操作重复 {self.anomaly_state.repeated_actions} 次: {decision.action} -> {decision.target}"
+                    )
 
             self._update_state(
                 decision_result=f"{decision.action}: {decision.target}",

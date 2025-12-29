@@ -4,34 +4,34 @@
 适配 autoglm-phone 等视觉模型，提供屏幕识别和动作执行能力
 """
 
-import base64
-import time
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from phone_agent.model.client import ModelClient, ModelConfig, MessageBuilder
-from phone_agent.actions.handler import ActionHandler, ActionResult, parse_action
+from phone_agent.actions.handler import ActionHandler, parse_action
 from phone_agent.device_factory import get_device_factory
 
 from AutoGLM_GUI.logger import logger
-from .protocols import VISION_DESCRIBE_PROMPT, ModelStage
+from .protocols import VISION_DESCRIBE_PROMPT
 
 
 @dataclass
 class ScreenDescription:
     """屏幕描述结果"""
-    description: str       # 屏幕文字描述
-    current_app: str       # 当前应用
-    elements: list[str]    # 识别到的主要元素
+
+    description: str  # 屏幕文字描述
+    current_app: str  # 当前应用
+    elements: list[str]  # 识别到的主要元素
     raw_response: str = ""
 
 
 @dataclass
 class ExecutionResult:
     """动作执行结果"""
+
     success: bool
-    action_type: str       # 执行的动作类型
-    target: str            # 目标描述
+    action_type: str  # 执行的动作类型
+    target: str  # 目标描述
     position: Optional[tuple[int, int]] = None  # 点击位置(如果有)
     message: str = ""
     finished: bool = False
@@ -104,10 +104,6 @@ class VisionModel:
         # 获取截图
         if screenshot_base64 is None:
             screenshot_base64, width, height = self.capture_screenshot()
-        else:
-            # 如果提供了截图，需要获取尺寸
-            screenshot = self.device_factory.get_screenshot(self.device_id)
-            width, height = screenshot.width, screenshot.height
 
         # 获取当前应用
         current_app = self.device_factory.get_current_app(self.device_id)
@@ -134,7 +130,9 @@ class VisionModel:
             response = self.model_client.request(messages)
 
             # 解析描述
-            description = response.thinking if response.thinking else response.raw_content
+            description = (
+                response.thinking if response.thinking else response.raw_content
+            )
 
             # 提取元素列表（简单解析）
             elements = self._extract_elements(description)
@@ -246,7 +244,10 @@ class VisionModel:
                 success=result.success,
                 action_type=action_type,
                 target=target,
-                position=(int(position[0] * width / 1000), int(position[1] * height / 1000)),
+                position=(
+                    int(position[0] * width / 1000),
+                    int(position[1] * height / 1000),
+                ),
                 message=result.message or "",
                 finished=result.should_finish,
             )
@@ -272,7 +273,9 @@ class VisionModel:
                 success=result.success,
                 action_type="type",
                 target=target,
-                message=f"输入: {content[:50]}..." if len(content) > 50 else f"输入: {content}",
+                message=f"输入: {content[:50]}..."
+                if len(content) > 50
+                else f"输入: {content}",
             )
 
         # 处理滑动操作
@@ -358,9 +361,9 @@ class VisionModel:
         self,
         target_description: str,
         screenshot_base64: str,
-        width: int,
-        height: int,
-        on_thinking: Optional[Callable[[str], None]] = None,
+        _width: int,
+        _height: int,
+        _on_thinking: Optional[Callable[[str], None]] = None,
     ) -> Optional[tuple[int, int]]:
         """
         使用视觉模型定位元素

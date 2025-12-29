@@ -78,7 +78,9 @@ function ChatComponent() {
   const t = useTranslation();
   const [devices, setDevices] = useState<Device[]>([]);
   const [currentDeviceId, setCurrentDeviceId] = useState<string>('');
-  const [deviceThinkingModes, setDeviceThinkingModes] = useState<Record<string, 'fast' | 'deep'>>({});
+  const [deviceThinkingModes, setDeviceThinkingModes] = useState<
+    Record<string, 'fast' | 'deep'>
+  >({});
   const [toast, setToast] = useState<{
     message: string;
     type: ToastType;
@@ -186,9 +188,18 @@ function ChatComponent() {
   }, [currentDeviceId]);
 
   useEffect(() => {
-    loadDevices();
-    const interval = setInterval(loadDevices, 3000);
-    return () => clearInterval(interval);
+    // Initial load with a small delay to avoid synchronous setState
+    const timeoutId = setTimeout(() => {
+      loadDevices();
+    }, 0);
+
+    // Set up interval for periodic updates
+    const intervalId = setInterval(loadDevices, 3000);
+
+    return () => {
+      clearTimeout(timeoutId);
+      clearInterval(intervalId);
+    };
   }, [loadDevices]);
 
   const handleSaveConfig = async () => {
@@ -656,7 +667,7 @@ function ChatComponent() {
                 isVisible={device.id === currentDeviceId}
                 isConfigured={!!config?.base_url}
                 thinkingMode={deviceThinkingModes[device.serial] || 'fast'}
-                onThinkingModeChange={(mode) => {
+                onThinkingModeChange={mode => {
                   setDeviceThinkingModes(prev => ({
                     ...prev,
                     [device.serial]: mode,

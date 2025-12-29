@@ -574,8 +574,7 @@ def disconnect_all_connections(serial: str) -> dict:
                 d_conn_type = d.connection_type.value
                 if d_conn_type in ("wifi", "remote"):
                     run_cmd_silently_sync(
-                        [conn.adb_path, "disconnect", d.primary_device_id],
-                        timeout=5
+                        [conn.adb_path, "disconnect", d.primary_device_id], timeout=5
                     )
                     logger.info(f"Disconnected connection {d.primary_device_id}")
                     if "wifi" not in disconnected:
@@ -591,4 +590,3 @@ def disconnect_all_connections(serial: str) -> dict:
         "serial": serial,
         "message": f"Disconnected: {', '.join(disconnected) if disconnected else 'none'}",
     }
-

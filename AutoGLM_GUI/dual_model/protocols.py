@@ -6,19 +6,21 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Optional
 from pydantic import BaseModel
 
 
 class ThinkingMode(str, Enum):
     """思考模式"""
-    FAST = "fast"    # 快速模式 - 简洁高效
-    DEEP = "deep"    # 深度模式 - 全面分析
+
+    FAST = "fast"  # 快速模式 - 简洁高效
+    DEEP = "deep"  # 深度模式 - 全面分析
     TURBO = "turbo"  # 极速模式 - 批量操作，仅异常时调用决策模型
 
 
 class DecisionModelConfig(BaseModel):
     """决策大模型配置"""
+
     base_url: str = "https://api-inference.modelscope.cn/v1"
     api_key: str = ""
     model_name: str = "ZhipuAI/GLM-4.7"
@@ -29,31 +31,35 @@ class DecisionModelConfig(BaseModel):
 
 class DualModelConfig(BaseModel):
     """双模型协作配置"""
+
     enabled: bool = False
     decision_model: DecisionModelConfig = DecisionModelConfig()
 
 
 class ModelRole(str, Enum):
     """模型角色"""
+
     DECISION = "decision"  # 决策大模型
-    VISION = "vision"      # 视觉小模型
+    VISION = "vision"  # 视觉小模型
 
 
 class ModelStage(str, Enum):
     """模型当前阶段"""
+
     IDLE = "idle"
-    ANALYZING = "analyzing"       # 分析任务
-    DECIDING = "deciding"         # 做决策
-    GENERATING = "generating"     # 生成内容
-    CAPTURING = "capturing"       # 截图
-    RECOGNIZING = "recognizing"   # 识别屏幕
-    EXECUTING = "executing"       # 执行动作
-    WAITING = "waiting"           # 等待
+    ANALYZING = "analyzing"  # 分析任务
+    DECIDING = "deciding"  # 做决策
+    GENERATING = "generating"  # 生成内容
+    CAPTURING = "capturing"  # 截图
+    RECOGNIZING = "recognizing"  # 识别屏幕
+    EXECUTING = "executing"  # 执行动作
+    WAITING = "waiting"  # 等待
 
 
 @dataclass
 class DualModelState:
     """双模型状态"""
+
     # 大模型状态
     decision_active: bool = False
     decision_stage: ModelStage = ModelStage.IDLE
@@ -89,12 +95,13 @@ class DualModelState:
                 "current_step": self.current_step,
                 "total_steps": self.total_steps,
                 "task_plan": self.task_plan,
-            }
+            },
         }
 
 
 class DualModelEventType(str, Enum):
     """双模型事件类型"""
+
     # 大模型事件
     DECISION_START = "decision_start"
     DECISION_THINKING = "decision_thinking"
@@ -118,6 +125,7 @@ class DualModelEventType(str, Enum):
 @dataclass
 class DualModelEvent:
     """双模型事件"""
+
     type: DualModelEventType
     data: dict
     model: Optional[ModelRole] = None
@@ -134,7 +142,7 @@ class DualModelEvent:
             "model": self.model.value if self.model else None,
             "step": self.step,
             "timestamp": self.timestamp or time.time(),
-            **self.data
+            **self.data,
         }
         return f"event: {self.type.value}\ndata: {json.dumps(event_data, ensure_ascii=False)}\n\n"
 

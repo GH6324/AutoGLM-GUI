@@ -23,7 +23,8 @@ import {
 } from 'lucide-react';
 import { throttle } from 'lodash';
 import { ScrcpyPlayer } from './ScrcpyPlayer';
-import { DualModelPanel, useDualModelState } from './DualModelPanel';
+import { DualModelPanel } from './DualModelPanel';
+import { useDualModelState } from './useDualModelState';
 import type {
   ScreenshotResponse,
   ThinkingChunkEvent,
@@ -144,7 +145,11 @@ export function DevicePanel({
   const [showWorkflowPopover, setShowWorkflowPopover] = useState(false);
   const [dualModelEnabled, setDualModelEnabled] = useState(false);
   const [dualModelInitialized, setDualModelInitialized] = useState(false);
-  const { state: dualModelState, handleEvent: handleDualModelEvent, reset: resetDualModelState } = useDualModelState();
+  const {
+    state: dualModelState,
+    handleEvent: handleDualModelEvent,
+    reset: resetDualModelState,
+  } = useDualModelState();
   const feedbackTimeoutRef = useRef<number | null>(null);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [renameValue, setRenameValue] = useState('');
@@ -273,7 +278,8 @@ export function DevicePanel({
     try {
       await initDualModel({
         device_id: deviceId,
-        decision_base_url: config.decision_base_url || 'https://api-inference.modelscope.cn/v1',
+        decision_base_url:
+          config.decision_base_url || 'https://api-inference.modelscope.cn/v1',
         decision_api_key: config.decision_api_key || '',
         decision_model_name: config.decision_model_name || 'ZhipuAI/GLM-4.7',
         vision_base_url: config.base_url,
@@ -646,7 +652,7 @@ export function DevicePanel({
     const agentMessageId = (Date.now() + 1).toString();
     const agentMessage: Message = {
       id: agentMessageId,
-      role: 'agent',
+      role: 'assistant',
       content: '',
       timestamp: new Date(),
       thinking: [],
@@ -663,7 +669,12 @@ export function DevicePanel({
         handleDualModelEvent(event);
 
         if (event.type === 'task_complete') {
-          const completeEvent = event as { type: 'task_complete'; success: boolean; message: string; steps: number };
+          const completeEvent = event as {
+            type: 'task_complete';
+            success: boolean;
+            message: string;
+            steps: number;
+          };
           setMessages(prev =>
             prev.map(msg =>
               msg.id === agentMessageId
@@ -797,7 +808,11 @@ export function DevicePanel({
       // Immediately update UI - set isStreaming to false and update message content
       setMessages(prev => {
         const lastMessage = prev[prev.length - 1];
-        if (lastMessage && lastMessage.role === 'agent' && lastMessage.isStreaming) {
+        if (
+          lastMessage &&
+          lastMessage.role === 'assistant' &&
+          lastMessage.isStreaming
+        ) {
           return prev.map((msg, index) =>
             index === prev.length - 1
               ? {
@@ -815,9 +830,13 @@ export function DevicePanel({
 
       // Notify backend to abort (don't wait for response)
       if (dualModelEnabled) {
-        abortDualModelChat(deviceId).catch(e => console.error('Backend abort failed:', e));
+        abortDualModelChat(deviceId).catch(e =>
+          console.error('Backend abort failed:', e)
+        );
       } else {
-        abortChat(deviceId).catch(e => console.error('Backend abort failed:', e));
+        abortChat(deviceId).catch(e =>
+          console.error('Backend abort failed:', e)
+        );
       }
 
       // Show feedback
@@ -994,7 +1013,9 @@ export function DevicePanel({
               <div className="flex items-center gap-1">
                 <h2
                   className={`font-bold text-slate-900 dark:text-slate-100 ${
-                    onRename ? 'cursor-pointer hover:text-[#1d9bf0] dark:hover:text-[#1d9bf0]' : ''
+                    onRename
+                      ? 'cursor-pointer hover:text-[#1d9bf0] dark:hover:text-[#1d9bf0]'
+                      : ''
                   }`}
                   onDoubleClick={() => {
                     if (onRename) {
@@ -1002,7 +1023,9 @@ export function DevicePanel({
                       setShowRenameDialog(true);
                     }
                   }}
-                  title={onRename ? t.deviceCard.doubleClickToRename : undefined}
+                  title={
+                    onRename ? t.deviceCard.doubleClickToRename : undefined
+                  }
                 >
                   {deviceName}
                 </h2>
@@ -1120,7 +1143,11 @@ export function DevicePanel({
                   ? 'bg-purple-500 hover:bg-purple-600 text-white'
                   : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
               }`}
-              title={dualModelEnabled ? t.devicePanel.disableDualModel : t.devicePanel.enableDualModel}
+              title={
+                dualModelEnabled
+                  ? t.devicePanel.disableDualModel
+                  : t.devicePanel.enableDualModel
+              }
             >
               <Brain className="h-4 w-4" />
             </Button>
@@ -1176,7 +1203,9 @@ export function DevicePanel({
               state={dualModelState}
               isStreaming={loading}
               className=""
-              decisionModelName={config?.decision_model_name || 'ZhipuAI/GLM-4.7'}
+              decisionModelName={
+                config?.decision_model_name || 'ZhipuAI/GLM-4.7'
+              }
               visionModelName={config?.model_name || 'autoglm-phone'}
             />
           </div>
@@ -1627,7 +1656,9 @@ export function DevicePanel({
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="device-alias-panel">{t.deviceCard.deviceAlias}</Label>
+              <Label htmlFor="device-alias-panel">
+                {t.deviceCard.deviceAlias}
+              </Label>
               <Input
                 id="device-alias-panel"
                 value={renameValue}
@@ -1636,7 +1667,9 @@ export function DevicePanel({
                 autoFocus
                 onKeyDown={e => {
                   if (e.key === 'Enter' && onRename) {
-                    onRename(renameValue).then(() => setShowRenameDialog(false));
+                    onRename(renameValue).then(() =>
+                      setShowRenameDialog(false)
+                    );
                   }
                 }}
               />
@@ -1646,7 +1679,10 @@ export function DevicePanel({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRenameDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowRenameDialog(false)}
+            >
               {t.common.cancel}
             </Button>
             <Button

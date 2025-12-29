@@ -966,17 +966,27 @@ export async function resetDualModel(deviceId: string): Promise<{
 export async function getDeviceAlias(
   serial: string
 ): Promise<{ serial: string; alias: string | null }> {
-  const res = await axios.get(`/api/devices/${encodeURIComponent(serial)}/alias`);
+  const res = await axios.get(
+    `/api/devices/${encodeURIComponent(serial)}/alias`
+  );
   return res.data;
 }
 
 export async function setDeviceAlias(
   serial: string,
   alias: string
-): Promise<{ success: boolean; serial: string; alias: string | null; message: string }> {
-  const res = await axios.put(`/api/devices/${encodeURIComponent(serial)}/alias`, {
-    alias,
-  });
+): Promise<{
+  success: boolean;
+  serial: string;
+  alias: string | null;
+  message: string;
+}> {
+  const res = await axios.put(
+    `/api/devices/${encodeURIComponent(serial)}/alias`,
+    {
+      alias,
+    }
+  );
   return res.data;
 }
 
@@ -1003,6 +1013,8 @@ export async function deleteDevice(
 export async function disconnectAllConnections(
   serial: string
 ): Promise<{ success: boolean; serial: string; message: string }> {
-  const res = await axios.post(`/api/devices/${encodeURIComponent(serial)}/disconnect_all`);
+  const res = await axios.post(
+    `/api/devices/${encodeURIComponent(serial)}/disconnect_all`
+  );
   return res.data;
 }

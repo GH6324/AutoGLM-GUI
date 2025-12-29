@@ -14,7 +14,17 @@ from fastapi.staticfiles import StaticFiles
 from AutoGLM_GUI.adb_plus.qr_pair import qr_pairing_manager
 from AutoGLM_GUI.version import APP_VERSION
 
-from . import agents, control, devices, dual_model, mcp, media, metrics, version, workflows
+from . import (
+    agents,
+    control,
+    devices,
+    dual_model,
+    mcp,
+    media,
+    metrics,
+    version,
+    workflows,
+)
 
 
 def _get_static_dir() -> Path | None:

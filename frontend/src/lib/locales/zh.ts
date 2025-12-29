@@ -161,7 +161,8 @@ export const zh = {
     disconnectWifiTitle: '断开 WiFi',
     disconnectWifiContent: '确定要断开 WiFi 连接吗？',
     disconnectAllTitle: '断开所有连接',
-    disconnectAllContent: '确定要断开此设备的所有连接吗？这将断开 USB 和 WiFi 连接。',
+    disconnectAllContent:
+      '确定要断开此设备的所有连接吗？这将断开 USB 和 WiFi 连接。',
     deleteDeviceTitle: '删除设备',
     deleteDeviceContent: '确定要删除此设备吗？这将断开连接并移除设备别名。',
     renameDeviceTitle: '重命名设备',

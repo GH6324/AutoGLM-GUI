@@ -457,7 +457,9 @@ def get_config_endpoint() -> ConfigResponse:
         dual_model_enabled=effective_config.dual_model_enabled,
         decision_base_url=effective_config.decision_base_url,
         decision_model_name=effective_config.decision_model_name,
-        decision_api_key=effective_config.decision_api_key if effective_config.decision_api_key else "",
+        decision_api_key=effective_config.decision_api_key
+        if effective_config.decision_api_key
+        else "",
         thinking_mode=effective_config.thinking_mode,
         conflicts=[
             {

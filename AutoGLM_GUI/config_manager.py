@@ -397,8 +397,12 @@ class UnifiedConfigManager:
 
                     # 保留未提供的字段
                     preserve_keys = [
-                        "api_key", "dual_model_enabled", "decision_base_url",
-                        "decision_model_name", "decision_api_key", "thinking_mode"
+                        "api_key",
+                        "dual_model_enabled",
+                        "decision_base_url",
+                        "decision_model_name",
+                        "decision_api_key",
+                        "thinking_mode",
                     ]
                     for key in preserve_keys:
                         if key not in new_config and key in existing:
@@ -480,10 +484,14 @@ class UnifiedConfigManager:
 
         # 所有配置字段
         config_keys = [
-            "base_url", "model_name", "api_key",
-            "dual_model_enabled", "decision_base_url",
-            "decision_model_name", "decision_api_key",
-            "thinking_mode"
+            "base_url",
+            "model_name",
+            "api_key",
+            "dual_model_enabled",
+            "decision_base_url",
+            "decision_model_name",
+            "decision_api_key",
+            "thinking_mode",
         ]
 
         for key in config_keys:
@@ -497,7 +505,10 @@ class UnifiedConfigManager:
             elif self._file_layer.has_value(key):
                 merged[key] = getattr(self._file_layer, key)
             # 4. 默认值（只对 base_url, model_name, api_key 有效）
-            elif hasattr(self._default_layer, key) and getattr(self._default_layer, key, None) is not None:
+            elif (
+                hasattr(self._default_layer, key)
+                and getattr(self._default_layer, key, None) is not None
+            ):
                 merged[key] = getattr(self._default_layer, key)
 
         # 验证并缓存

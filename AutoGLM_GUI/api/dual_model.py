@@ -1,7 +1,5 @@
 """双模型协作API端点"""
 
-import json
-import queue
 import threading
 from typing import Any, Optional
 
@@ -11,16 +9,12 @@ from pydantic import BaseModel
 
 from AutoGLM_GUI.logger import logger
 from AutoGLM_GUI.dual_model import (
-    DecisionModel,
     DecisionModelConfig,
     DualModelAgent,
-    DualModelCallbacks,
-    DualModelConfig,
     DualModelEvent,
     DualModelEventType,
 )
 from AutoGLM_GUI.dual_model.protocols import ThinkingMode
-from AutoGLM_GUI.state import non_blocking_takeover
 from phone_agent.model import ModelConfig
 
 router = APIRouter(prefix="/api/dual", tags=["dual-model"])
@@ -32,6 +26,7 @@ _active_dual_sessions_lock = threading.Lock()
 
 class DualModelInitRequest(BaseModel):
     """双模型初始化请求"""
+
     device_id: str
 
     # 决策大模型配置
@@ -52,17 +47,20 @@ class DualModelInitRequest(BaseModel):
 
 class DualModelChatRequest(BaseModel):
     """双模型聊天请求"""
+
     device_id: str
     message: str
 
 
 class DualModelAbortRequest(BaseModel):
     """中止请求"""
+
     device_id: str
 
 
 class DualModelStatusResponse(BaseModel):
     """状态响应"""
+
     active: bool
     device_id: Optional[str] = None
     state: Optional[dict] = None
@@ -75,15 +73,16 @@ def init_dual_model(request: DualModelInitRequest) -> dict:
     from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
 
     device_id = request.device_id
-    thinking_mode = ThinkingMode.FAST if request.thinking_mode == "fast" else ThinkingMode.DEEP
+    thinking_mode = (
+        ThinkingMode.FAST if request.thinking_mode == "fast" else ThinkingMode.DEEP
+    )
     logger.info(f"初始化双模型Agent: {device_id}, 模式: {thinking_mode.value}")
 
     # 检查设备是否已有单模型Agent初始化
     manager = PhoneAgentManager.get_instance()
     if not manager.is_initialized(device_id):
         raise HTTPException(
-            status_code=400,
-            detail="设备尚未初始化单模型Agent，请先调用 /api/init"
+            status_code=400, detail="设备尚未初始化单模型Agent，请先调用 /api/init"
         )
 
     # 获取视觉模型配置
@@ -92,10 +91,7 @@ def init_dual_model(request: DualModelInitRequest) -> dict:
     vision_model_name = request.vision_model_name or config.model_name
 
     if not vision_base_url:
-        raise HTTPException(
-            status_code=400,
-            detail="视觉模型base_url未配置"
-        )
+        raise HTTPException(status_code=400, detail="视觉模型base_url未配置")
 
     # 创建配置
     decision_config = DecisionModelConfig(
@@ -154,8 +150,7 @@ def dual_model_chat_stream(request: DualModelChatRequest):
     with _active_dual_sessions_lock:
         if device_id not in _active_dual_sessions:
             raise HTTPException(
-                status_code=400,
-                detail="双模型Agent未初始化，请先调用 /api/dual/init"
+                status_code=400, detail="双模型Agent未初始化，请先调用 /api/dual/init"
             )
         agent, stop_event = _active_dual_sessions[device_id]
 
@@ -196,7 +191,10 @@ def dual_model_chat_stream(request: DualModelChatRequest):
                         yield event.to_sse()
 
                         # 如果是完成或错误事件，结束循环
-                        if event.type in [DualModelEventType.TASK_COMPLETE, DualModelEventType.ERROR]:
+                        if event.type in [
+                            DualModelEventType.TASK_COMPLETE,
+                            DualModelEventType.ERROR,
+                        ]:
                             return
                 except Exception:
                     continue

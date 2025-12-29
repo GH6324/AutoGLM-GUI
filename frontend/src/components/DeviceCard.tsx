@@ -45,7 +45,7 @@ interface DeviceCardProps {
 
 export function DeviceCard({
   id,
-  serial,
+  serial: _serial,
   model,
   status,
   connectionType,
@@ -66,7 +66,8 @@ export function DeviceCard({
   const [loading, setLoading] = useState(false);
   const [showWifiConfirm, setShowWifiConfirm] = useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
-  const [showDisconnectAllConfirm, setShowDisconnectAllConfirm] = useState(false);
+  const [showDisconnectAllConfirm, setShowDisconnectAllConfirm] =
+    useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [editValue, setEditValue] = useState(alias || '');
@@ -432,11 +433,16 @@ export function DeviceCard({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRenameDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowRenameDialog(false)}
+            >
               {t.common.cancel}
             </Button>
             <Button onClick={handleSaveRename} disabled={loading}>
-              {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
               {t.common.save}
             </Button>
           </DialogFooter>

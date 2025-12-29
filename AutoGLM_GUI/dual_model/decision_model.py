@@ -5,9 +5,8 @@
 """
 
 import json
-import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from openai import OpenAI
 
@@ -19,7 +18,6 @@ from .protocols import (
     DECISION_SYSTEM_PROMPT_TURBO,
     DECISION_REPLAN_PROMPT,
     DECISION_HUMANIZE_PROMPT,
-    ModelStage,
     ThinkingMode,
 )
 
@@ -27,6 +25,7 @@ from .protocols import (
 @dataclass
 class TaskPlan:
     """任务计划"""
+
     summary: str
     steps: list[str]
     estimated_actions: int
@@ -43,6 +42,7 @@ class TaskPlan:
 @dataclass
 class ActionStep:
     """单个操作步骤"""
+
     action: str
     target: str = ""
     content: Optional[str] = None
@@ -63,6 +63,7 @@ class ActionStep:
 @dataclass
 class ActionSequence:
     """操作序列（TURBO模式）"""
+
     summary: str
     actions: list[ActionStep]
     checkpoints: list[str] = field(default_factory=list)
@@ -90,9 +91,10 @@ class ActionSequence:
 @dataclass
 class Decision:
     """决策结果"""
-    action: str           # tap, swipe, type, scroll, back, home, launch
-    target: str           # 目标描述
-    reasoning: str        # 决策理由
+
+    action: str  # tap, swipe, type, scroll, back, home, launch
+    target: str  # 目标描述
+    reasoning: str  # 决策理由
     content: Optional[str] = None  # 输入内容(type操作时使用)
     finished: bool = False
     raw_response: str = ""
@@ -115,7 +117,11 @@ class DecisionModel:
     制定操作决策并指导小模型执行。
     """
 
-    def __init__(self, config: DecisionModelConfig, thinking_mode: ThinkingMode = ThinkingMode.DEEP):
+    def __init__(
+        self,
+        config: DecisionModelConfig,
+        thinking_mode: ThinkingMode = ThinkingMode.DEEP,
+    ):
         self.config = config
         self.thinking_mode = thinking_mode
         self.client = OpenAI(
@@ -133,7 +139,9 @@ class DecisionModel:
         else:
             self.system_prompt = DECISION_SYSTEM_PROMPT
 
-        logger.info(f"决策大模型初始化: {config.model_name}, 模式: {thinking_mode.value}")
+        logger.info(
+            f"决策大模型初始化: {config.model_name}, 模式: {thinking_mode.value}"
+        )
 
     def _stream_completion(
         self,
@@ -166,7 +174,7 @@ class DecisionModel:
                     delta = chunk.choices[0].delta
 
                     # 处理思考过程 (reasoning_content)
-                    reasoning_chunk = getattr(delta, 'reasoning_content', None) or ""
+                    reasoning_chunk = getattr(delta, "reasoning_content", None) or ""
                     if reasoning_chunk:
                         full_reasoning += reasoning_chunk
                         if on_thinking:
@@ -217,11 +225,14 @@ class DecisionModel:
         # 构建消息（使用动态提示词）
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": f"""请分析以下任务，并制定执行计划：
+            {
+                "role": "user",
+                "content": f"""请分析以下任务，并制定执行计划：
 
 任务: {task}
 
-请以JSON格式返回任务计划。"""}
+请以JSON格式返回任务计划。""",
+            },
         ]
 
         # 调用模型
@@ -290,7 +301,7 @@ class DecisionModel:
 
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": f"任务: {task}\n\n请生成完整的操作序列。"}
+            {"role": "user", "content": f"任务: {task}\n\n请生成完整的操作序列。"},
         ]
 
         response = self._stream_completion(messages, on_thinking, on_answer)
@@ -301,13 +312,15 @@ class DecisionModel:
             if data.get("type") == "action_sequence":
                 actions = []
                 for a in data.get("actions", []):
-                    actions.append(ActionStep(
-                        action=a.get("action", "tap"),
-                        target=a.get("target", ""),
-                        content=a.get("content"),
-                        need_generate=a.get("need_generate", False),
-                        direction=a.get("direction"),
-                    ))
+                    actions.append(
+                        ActionStep(
+                            action=a.get("action", "tap"),
+                            target=a.get("target", ""),
+                            content=a.get("content"),
+                            need_generate=a.get("need_generate", False),
+                            direction=a.get("direction"),
+                        )
+                    )
 
                 sequence = ActionSequence(
                     summary=data.get("summary", task),
@@ -369,20 +382,24 @@ class DecisionModel:
         )
 
         self.conversation_history.append({"role": "user", "content": prompt})
-        response = self._stream_completion(self.conversation_history, on_thinking, on_answer)
+        response = self._stream_completion(
+            self.conversation_history, on_thinking, on_answer
+        )
         self.conversation_history.append({"role": "assistant", "content": response})
 
         try:
             data = self._extract_json(response)
             actions = []
             for a in data.get("actions", []):
-                actions.append(ActionStep(
-                    action=a.get("action", "tap"),
-                    target=a.get("target", ""),
-                    content=a.get("content"),
-                    need_generate=a.get("need_generate", False),
-                    direction=a.get("direction"),
-                ))
+                actions.append(
+                    ActionStep(
+                        action=a.get("action", "tap"),
+                        target=a.get("target", ""),
+                        content=a.get("content"),
+                        need_generate=a.get("need_generate", False),
+                        direction=a.get("direction"),
+                    )
+                )
 
             return ActionSequence(
                 summary=data.get("summary", "重新规划"),
@@ -429,7 +446,10 @@ class DecisionModel:
         )
 
         messages = [
-            {"role": "system", "content": "你是一个社交媒体内容创作专家，擅长生成自然、真实、有个性的内容。"},
+            {
+                "role": "system",
+                "content": "你是一个社交媒体内容创作专家，擅长生成自然、真实、有个性的内容。",
+            },
             {"role": "user", "content": prompt},
         ]
 
@@ -558,7 +578,10 @@ class DecisionModel:
 请直接返回生成的内容文本，不需要JSON格式，不需要额外解释。"""
 
         messages = [
-            {"role": "system", "content": "你是一个内容创作助手，擅长生成各类社交媒体内容。请直接返回内容，不要添加任何解释或格式标记。"},
+            {
+                "role": "system",
+                "content": "你是一个内容创作助手，擅长生成各类社交媒体内容。请直接返回内容，不要添加任何解释或格式标记。",
+            },
             {"role": "user", "content": prompt},
         ]
 
@@ -589,7 +612,7 @@ class DecisionModel:
             pass
 
         # 尝试提取 ```json ... ``` 代码块
-        json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+        json_match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
         if json_match:
             try:
                 return json.loads(json_match.group(1))
@@ -597,7 +620,7 @@ class DecisionModel:
                 pass
 
         # 尝试提取 ``` ... ``` 代码块（不带json标记）
-        code_match = re.search(r'```\s*(.*?)\s*```', text, re.DOTALL)
+        code_match = re.search(r"```\s*(.*?)\s*```", text, re.DOTALL)
         if code_match:
             try:
                 return json.loads(code_match.group(1))
@@ -605,14 +628,14 @@ class DecisionModel:
                 pass
 
         # 尝试找到第一个 { 并匹配到对应的 }
-        start_idx = text.find('{')
+        start_idx = text.find("{")
         if start_idx != -1:
             brace_count = 0
             end_idx = start_idx
             for i in range(start_idx, len(text)):
-                if text[i] == '{':
+                if text[i] == "{":
                     brace_count += 1
-                elif text[i] == '}':
+                elif text[i] == "}":
                     brace_count -= 1
                     if brace_count == 0:
                         end_idx = i + 1
@@ -626,7 +649,7 @@ class DecisionModel:
                     pass
 
         # 最后尝试用非贪婪正则提取
-        brace_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text)
+        brace_match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text)
         if brace_match:
             try:
                 return json.loads(brace_match.group(0))

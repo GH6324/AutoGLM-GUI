@@ -5,7 +5,13 @@
 小模型(autoglm-phone): 负责屏幕识别、动作执行
 """
 
-from .decision_model import DecisionModel, Decision, TaskPlan, ActionSequence, ActionStep
+from .decision_model import (
+    DecisionModel,
+    Decision,
+    TaskPlan,
+    ActionSequence,
+    ActionStep,
+)
 from .vision_model import VisionModel, ScreenDescription, ExecutionResult
 from .dual_agent import DualModelAgent, DualModelCallbacks
 from .protocols import (
