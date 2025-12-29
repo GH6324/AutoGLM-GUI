@@ -98,6 +98,7 @@ def _create_sse_event(
     event_data = {"type": event_type, "role": role, **data}
     return event_data
 
+
 @router.post("/api/init")
 def init_agent(request: InitRequest) -> dict:
     """初始化 PhoneAgent（多设备支持）。"""
