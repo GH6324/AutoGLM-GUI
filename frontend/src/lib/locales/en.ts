@@ -43,6 +43,8 @@ export const en = {
     decisionBaseUrl: 'Decision Model Base URL',
     decisionModelName: 'Decision Model Name',
     decisionApiKey: 'Decision Model API Key',
+    visionModel: 'Vision Model',
+    decisionModel: 'Decision Model',
   },
   deviceSidebar: {
     devices: 'Devices',
@@ -142,7 +144,7 @@ export const en = {
     swiped: 'Swiped',
     swipeError: 'Swipe error: {error}',
     newMessages: 'New messages. Click to view latest',
-    enableDualModel: 'Enable dual model (GLM-4.7 + autoglm-phone)',
+    enableDualModel: 'Enable Dual Model Collaboration',
     disableDualModel: 'Disable dual model',
     fastMode: 'Fast mode - Quick & Simple',
     deepMode: 'Deep mode - Deep thinking',
@@ -154,12 +156,15 @@ export const en = {
         'Large model for planning + small model for execution',
       disableDualModel: 'Disable Dual Model',
       disableDualModelDesc:
-        'Switch back to single model mode using autoglm-phone only',
+        'Switch back to single model mode using vision model only',
       fastMode: 'Fast Thinking Mode',
       fastModeDesc: 'Quick response for simple tasks (tapping, swiping, etc.)',
       deepMode: 'Deep Thinking Mode',
       deepModeDesc:
         'Deep analysis for complex tasks (multi-step operations, app switching)',
+      turboMode: 'Turbo Mode',
+      turboModeDesc:
+        'Batch generate action sequences, call decision model only on errors, fastest speed',
     },
   },
   deviceCard: {
@@ -247,5 +252,19 @@ export const en = {
     deleteConfirm: 'Are you sure to delete this workflow?',
     quickRun: 'Quick Run',
     selectWorkflow: 'Select Workflow',
+  },
+  chatkit: {
+    title: 'AI Assistant',
+    layeredAgent: 'Layered Agent Mode',
+    layeredAgentDesc:
+      'Planner decomposes tasks into subtasks, executor handles each independently. You can see detailed tool calls.',
+    modeLabel: 'Mode:',
+    classicMode: 'Classic',
+    dualMode: 'Dual Model',
+    layeredMode: 'Layered Agent',
+    classicModeDesc: 'Vision model executes tasks directly',
+    dualModeDesc: 'Decision model guides step-by-step, vision model executes',
+    layeredModeDesc:
+      'Planner decomposes tasks, executor handles subtasks independently',
   },
 };
