@@ -250,6 +250,7 @@ class PhoneAgentManager:
         device_id: str,
         on_thinking_chunk: Callable[[str], None],
         timeout: Optional[float] = None,
+        auto_initialize: bool = True,
     ):
         """
         Context manager for streaming-enabled agent with automatic:
@@ -258,17 +259,23 @@ class PhoneAgentManager:
         - 上下文隔离和同步
         - Abort 事件注册/清理
 
+        By default, automatically initializes the agent using global configuration
+        if not already initialized. Set auto_initialize=False to require explicit
+        initialization via initialize_agent().
+
         Args:
             device_id: 设备标识符
             on_thinking_chunk: 流式思考块回调函数
             timeout: 锁获取超时时间（None=阻塞，0=非阻塞）
+            auto_initialize: 自动初始化（默认: True）
 
         Yields:
             tuple[PhoneAgent, threading.Event]: (streaming_agent, stop_event)
 
         Raises:
             DeviceBusyError: 设备忙
-            AgentNotInitializedError: Agent 未初始化
+            AgentNotInitializedError: Agent 未初始化且 auto_initialize=False
+            AgentInitializationError: auto_initialize=True 且初始化失败
 
         Example:
             >>> def on_chunk(chunk: str):
@@ -287,6 +294,7 @@ class PhoneAgentManager:
                 device_id,
                 timeout=timeout if timeout is not None else 0,
                 raise_on_timeout=True,
+                auto_initialize=auto_initialize,
             )
 
             # 获取原始 agent 和配置
@@ -526,6 +534,7 @@ class PhoneAgentManager:
         device_id: str,
         timeout: Optional[float] = None,
         raise_on_timeout: bool = True,
+        auto_initialize: bool = False,
     ) -> bool:
         """
         Acquire device lock for exclusive access.
@@ -534,19 +543,28 @@ class PhoneAgentManager:
             device_id: Device identifier
             timeout: Lock acquisition timeout (None = blocking, 0 = non-blocking)
             raise_on_timeout: Raise DeviceBusyError on timeout
+            auto_initialize: Auto-initialize agent if not already initialized (default: False)
 
         Returns:
             bool: True if acquired, False if timeout (when raise_on_timeout=False)
 
         Raises:
             DeviceBusyError: If timeout and raise_on_timeout=True
-            AgentNotInitializedError: If agent not initialized
+            AgentNotInitializedError: If agent not initialized AND auto_initialize=False
+            AgentInitializationError: If auto_initialize=True and initialization fails
         """
-        # Verify agent exists
+        # Verify agent exists (with optional auto-initialization)
         if not self.is_initialized(device_id):
-            raise AgentNotInitializedError(
-                f"Agent not initialized for device {device_id}"
-            )
+            if auto_initialize:
+                # Double-check locking pattern for thread safety
+                with self._manager_lock:
+                    if not self.is_initialized(device_id):
+                        self._auto_initialize_agent(device_id)
+            else:
+                raise AgentNotInitializedError(
+                    f"Agent not initialized for device {device_id}. "
+                    f"Use auto_initialize=True or call initialize_agent() first."
+                )
 
         lock = self._get_device_lock(device_id)
 
@@ -597,29 +615,47 @@ class PhoneAgentManager:
             logger.debug(f"Device lock released for {device_id}")
 
     @contextmanager
-    def use_agent(self, device_id: str, timeout: Optional[float] = None):
+    def use_agent(
+        self,
+        device_id: str,
+        timeout: Optional[float] = None,
+        auto_initialize: bool = True,
+    ):
         """
         Context manager for automatic lock acquisition/release.
+
+        By default, automatically initializes the agent using global configuration
+        if not already initialized. Set auto_initialize=False to require explicit
+        initialization via initialize_agent().
 
         Args:
             device_id: Device identifier
             timeout: Lock acquisition timeout
+            auto_initialize: Auto-initialize if not already initialized (default: True)
 
         Yields:
             PhoneAgent: Agent instance
 
         Raises:
             DeviceBusyError: If device is busy
-            AgentNotInitializedError: If agent not initialized
+            AgentNotInitializedError: If agent not initialized AND auto_initialize=False
+            AgentInitializationError: If auto_initialize=True and initialization fails
 
         Example:
             >>> manager = PhoneAgentManager.get_instance()
-            >>> with manager.use_agent("device_123") as agent:
+            >>> with manager.use_agent("device_123") as agent:  # Auto-initializes
             >>>     result = agent.run("Open WeChat")
+            >>> with manager.use_agent("device_123", auto_initialize=False) as agent:
+            >>>     result = agent.run("Open WeChat")  # Requires prior init
         """
         acquired = False
         try:
-            acquired = self.acquire_device(device_id, timeout, raise_on_timeout=True)
+            acquired = self.acquire_device(
+                device_id,
+                timeout,
+                raise_on_timeout=True,
+                auto_initialize=auto_initialize,
+            )
             agent = self.get_agent(device_id)
             yield agent
         except Exception as exc:
