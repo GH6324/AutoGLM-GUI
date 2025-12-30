@@ -70,6 +70,10 @@ uvx autoglm-gui
 
 ## 📸 界面预览
 
+### 双模型架构
+决策模型+视觉模型 双模型架构，更好的执行复杂任务
+<img width="879" height="849" alt="图片" src="https://github.com/user-attachments/assets/15e5cf51-5a19-403d-9af3-46f77c2068f5" />
+
 ### 任务开始
 ![任务开始](https://github.com/user-attachments/assets/b8cb6fbc-ca5b-452c-bcf4-7d5863d4577a)
 
