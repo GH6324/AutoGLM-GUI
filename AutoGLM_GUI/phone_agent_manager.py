@@ -115,6 +115,10 @@ class PhoneAgentManager:
         # Abort events (device_id -> threading.Event)
         self._abort_events: dict[str, threading.Event] = {}
 
+        # Agent storage (transition from global state to instance state)
+        self._agents: dict[str, "PhoneAgent"] = {}
+        self._agent_configs: dict[str, tuple[ModelConfig, AgentConfig]] = {}
+
     @classmethod
     def get_instance(cls) -> PhoneAgentManager:
         """Get singleton instance (thread-safe, double-checked locking)."""
@@ -156,15 +160,14 @@ class PhoneAgentManager:
             - On failure, state is rolled back
             - state.agents and state.agent_configs remain consistent
         """
+        from AutoGLM_GUI.state import non_blocking_takeover
         from phone_agent import PhoneAgent
-
-        from AutoGLM_GUI.state import agent_configs, agents, non_blocking_takeover
 
         with self._manager_lock:
             # Check if already initialized
-            if device_id in agents and not force:
+            if device_id in self._agents and not force:
                 logger.debug(f"Agent already initialized for {device_id}")
-                return agents[device_id]
+                return self._agents[device_id]
 
             # Check device availability (non-blocking check)
             device_lock = self._get_device_lock(device_id)
@@ -192,8 +195,8 @@ class PhoneAgentManager:
                 )
 
                 # Store in state (transactional)
-                agents[device_id] = agent
-                agent_configs[device_id] = (model_config, agent_config)
+                self._agents[device_id] = agent
+                self._agent_configs[device_id] = (model_config, agent_config)
 
                 # Update state to IDLE on success
                 self._metadata[device_id].state = AgentState.IDLE
@@ -203,8 +206,8 @@ class PhoneAgentManager:
 
             except Exception as e:
                 # Rollback on error
-                agents.pop(device_id, None)
-                agent_configs.pop(device_id, None)
+                self._agents.pop(device_id, None)
+                self._agent_configs.pop(device_id, None)
                 self._metadata[device_id].state = AgentState.ERROR
                 self._metadata[device_id].error_message = str(e)
 
@@ -253,13 +256,11 @@ class PhoneAgentManager:
         """
         from AutoGLM_GUI.agents import create_agent
 
-        from AutoGLM_GUI.state import agent_configs, agents
-
         with self._manager_lock:
             # Check if already initialized
-            if device_id in agents and not force:
+            if device_id in self._agents and not force:
                 logger.debug(f"Agent already initialized for {device_id}")
-                return agents[device_id]
+                return self._agents[device_id]
 
             # Check device availability (non-blocking check)
             device_lock = self._get_device_lock(device_id)
@@ -290,8 +291,8 @@ class PhoneAgentManager:
                 )
 
                 # Store in state (transactional)
-                agents[device_id] = agent
-                agent_configs[device_id] = (model_config, agent_config)
+                self._agents[device_id] = agent
+                self._agent_configs[device_id] = (model_config, agent_config)
 
                 # Update state to IDLE on success
                 self._metadata[device_id].state = AgentState.IDLE
@@ -303,8 +304,8 @@ class PhoneAgentManager:
 
             except Exception as e:
                 # Rollback on error
-                agents.pop(device_id, None)
-                agent_configs.pop(device_id, None)
+                self._agents.pop(device_id, None)
+                self._agent_configs.pop(device_id, None)
                 self._metadata[device_id].state = AgentState.ERROR
                 self._metadata[device_id].error_message = str(e)
 
@@ -493,11 +494,10 @@ class PhoneAgentManager:
         Raises:
             AgentInitializationError: 如果配置不完整或初始化失败
         """
-        from phone_agent.agent import AgentConfig
-        from phone_agent.model import ModelConfig
-
         from AutoGLM_GUI.config import config
         from AutoGLM_GUI.config_manager import config_manager
+        from phone_agent.agent import AgentConfig
+        from phone_agent.model import ModelConfig
 
         logger.info(f"Auto-initializing agent for device {device_id}...")
 
@@ -541,13 +541,11 @@ class PhoneAgentManager:
         Raises:
             AgentInitializationError: If agent not initialized and auto-init fails
         """
-        from AutoGLM_GUI.state import agents
-
         with self._manager_lock:
-            if device_id not in agents:
+            if device_id not in self._agents:
                 # 自动初始化：使用全局配置
                 self._auto_initialize_agent(device_id)
-            return agents[device_id]
+            return self._agents[device_id]
 
     def get_agent_safe(self, device_id: str) -> Optional[PhoneAgent]:
         """
@@ -559,10 +557,8 @@ class PhoneAgentManager:
         Returns:
             PhoneAgent or None: Agent instance or None if not initialized
         """
-        from AutoGLM_GUI.state import agents
-
         with self._manager_lock:
-            return agents.get(device_id)
+            return self._agents.get(device_id)
 
     def reset_agent(self, device_id: str) -> None:
         """
@@ -574,28 +570,27 @@ class PhoneAgentManager:
         Raises:
             AgentNotInitializedError: If agent not initialized
         """
+        from AutoGLM_GUI.state import non_blocking_takeover
         from phone_agent import PhoneAgent
 
-        from AutoGLM_GUI.state import agent_configs, agents, non_blocking_takeover
-
         with self._manager_lock:
-            if device_id not in agents:
+            if device_id not in self._agents:
                 raise AgentNotInitializedError(
                     f"Agent not initialized for device {device_id}"
                 )
 
             # Get cached config
-            if device_id not in agent_configs:
+            if device_id not in self._agent_configs:
                 logger.warning(
                     f"No cached config for {device_id}, only resetting agent state"
                 )
-                agents[device_id].reset()
+                self._agents[device_id].reset()
                 return
 
             # Rebuild agent from cached config
-            model_config, agent_config = agent_configs[device_id]
+            model_config, agent_config = self._agent_configs[device_id]
 
-            agents[device_id] = PhoneAgent(
+            self._agents[device_id] = PhoneAgent(
                 model_config=model_config,
                 agent_config=agent_config,
                 takeover_callback=non_blocking_takeover,
@@ -616,11 +611,9 @@ class PhoneAgentManager:
         Args:
             device_id: Device identifier
         """
-        from AutoGLM_GUI.state import agent_configs, agents
-
         with self._manager_lock:
             # Remove agent
-            agent = agents.pop(device_id, None)
+            agent = self._agents.pop(device_id, None)
             if agent:
                 try:
                     agent.reset()  # Clean up agent state
@@ -628,7 +621,7 @@ class PhoneAgentManager:
                     logger.warning(f"Error resetting agent during destroy: {e}")
 
             # Remove config
-            agent_configs.pop(device_id, None)
+            self._agent_configs.pop(device_id, None)
 
             # Remove metadata
             self._metadata.pop(device_id, None)
@@ -637,10 +630,8 @@ class PhoneAgentManager:
 
     def is_initialized(self, device_id: str) -> bool:
         """Check if agent is initialized for device."""
-        from AutoGLM_GUI.state import agents
-
         with self._manager_lock:
-            return device_id in agents
+            return device_id in self._agents
 
     # ==================== Concurrency Control ====================
 
@@ -824,14 +815,12 @@ class PhoneAgentManager:
 
     def get_config(self, device_id: str) -> tuple[ModelConfig, AgentConfig]:
         """Get cached configuration for device."""
-        from AutoGLM_GUI.state import agent_configs
-
         with self._manager_lock:
-            if device_id not in agent_configs:
+            if device_id not in self._agent_configs:
                 raise AgentNotInitializedError(
                     f"No configuration found for device {device_id}"
                 )
-            return agent_configs[device_id]
+            return self._agent_configs[device_id]
 
     def update_config(
         self,
@@ -847,15 +836,13 @@ class PhoneAgentManager:
             model_config: New model config (None = keep existing)
             agent_config: New agent config (None = keep existing)
         """
-        from AutoGLM_GUI.state import agent_configs
-
         with self._manager_lock:
-            if device_id not in agent_configs:
+            if device_id not in self._agent_configs:
                 raise AgentNotInitializedError(
                     f"No configuration found for device {device_id}"
                 )
 
-            old_model_config, old_agent_config = agent_configs[device_id]
+            old_model_config, old_agent_config = self._agent_configs[device_id]
 
             new_model_config = model_config or old_model_config
             new_agent_config = agent_config or old_agent_config
@@ -881,7 +868,6 @@ class PhoneAgentManager:
             Optional[str]: device_id of initialized agent, or None
         """
         from AutoGLM_GUI.device_manager import DeviceManager
-        from AutoGLM_GUI.state import agents
 
         with self._manager_lock:
             # Get device by serial from DeviceManager
@@ -893,7 +879,7 @@ class PhoneAgentManager:
 
             # Check all connections for initialized agents
             for conn in device.connections:
-                if conn.device_id in agents:
+                if conn.device_id in self._agents:
                     return conn.device_id
 
             return None
@@ -902,10 +888,8 @@ class PhoneAgentManager:
 
     def list_agents(self) -> list[str]:
         """Get list of all initialized device IDs."""
-        from AutoGLM_GUI.state import agents
-
         with self._manager_lock:
-            return list(agents.keys())
+            return list(self._agents.keys())
 
     def get_metadata(self, device_id: str) -> Optional[AgentMetadata]:
         """Get agent metadata."""
