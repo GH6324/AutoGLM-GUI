@@ -71,30 +71,11 @@ export interface StatusResponse {
   step_count: number;
 }
 
-export interface APIModelConfig {
-  base_url?: string;
-  api_key?: string;
-  model_name?: string;
-  max_tokens?: number;
-  temperature?: number;
-  top_p?: number;
-  frequency_penalty?: number;
-}
-
-export interface APIAgentConfig {
-  max_steps?: number;
-  device_id?: string | null;
-  verbose?: boolean;
-}
-
 export interface InitRequest {
-  model_config?: APIModelConfig;
-  agent_config?: APIAgentConfig;
-  // Agent 类型配置
-  agent_type?: string;
-  agent_config_params?: Record<string, unknown>;
-  // Hot-reload support
-  force?: boolean;
+  device_id: string; // Device ID (required)
+  agent_type?: string; // Agent type (default: "glm")
+  agent_config_params?: Record<string, unknown>; // Agent-specific configuration
+  force?: boolean; // Force re-initialization
 }
 
 export interface ScreenshotRequest {
@@ -651,6 +632,10 @@ export interface ConfigResponse {
   agent_config_params?: Record<string, unknown>;
   // Agent 执行配置
   default_max_steps: number;
+  // 决策模型配置
+  decision_base_url?: string;
+  decision_model_name?: string;
+  decision_api_key?: string;
 }
 
 export interface ConfigSaveRequest {
@@ -662,6 +647,10 @@ export interface ConfigSaveRequest {
   agent_config_params?: Record<string, unknown>;
   // Agent 执行配置
   default_max_steps?: number;
+  // 决策模型配置
+  decision_base_url?: string;
+  decision_model_name?: string;
+  decision_api_key?: string;
 }
 
 export async function getConfig(): Promise<ConfigResponse> {
@@ -681,6 +670,21 @@ export async function deleteConfig(): Promise<{
   message: string;
 }> {
   const res = await axios.delete('/api/config');
+  return res.data;
+}
+
+export interface ReinitAllAgentsResponse {
+  success: boolean;
+  total: number;
+  succeeded: string[];
+  failed: Record<string, string>;
+  message: string;
+}
+
+export async function reinitAllAgents(): Promise<ReinitAllAgentsResponse> {
+  const res = await axios.post<ReinitAllAgentsResponse>(
+    '/api/agents/reinit-all'
+  );
   return res.data;
 }
 

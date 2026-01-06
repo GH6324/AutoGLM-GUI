@@ -19,14 +19,7 @@ import type {
   ErrorEvent,
   Workflow,
 } from '../api';
-import {
-  abortChat,
-  initAgent,
-  resetChat,
-  sendMessageStream,
-  listWorkflows,
-  getErrorMessage,
-} from '../api';
+import { abortChat, resetChat, sendMessageStream, listWorkflows } from '../api';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -66,22 +59,11 @@ interface Message {
   currentThinking?: string; // Current thinking text being streamed
 }
 
-interface GlobalConfig {
-  base_url: string;
-  model_name: string;
-  api_key?: string;
-  thinking_mode?: string;
-  agent_type?: string;
-  agent_config_params?: Record<string, unknown>;
-}
-
 interface DevicePanelProps {
   deviceId: string; // Used for API calls
   deviceSerial: string; // Used for history storage
   deviceName: string;
   deviceConnectionType?: string; // Device connection type (usb/wifi/remote)
-  config: GlobalConfig | null;
-  isVisible: boolean;
   isConfigured: boolean;
 }
 
@@ -90,7 +72,6 @@ export function DevicePanel({
   deviceSerial,
   deviceName,
   deviceConnectionType,
-  config,
   isConfigured,
 }: DevicePanelProps) {
   const t = useTranslation();
@@ -99,7 +80,8 @@ export function DevicePanel({
   const [loading, setLoading] = useState(false);
   const [aborting, setAborting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [initialized, setInitialized] = useState(false);
+  // ✅ 移除 initialized 状态，依赖后端自动初始化
+  // const [initialized, setInitialized] = useState(false);
   const [showHistoryPopover, setShowHistoryPopover] = useState(false);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -108,8 +90,8 @@ export function DevicePanel({
   const chatStreamRef = useRef<{ close: () => void } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const hasAutoInited = useRef(false);
-  const prevConfigRef = useRef<GlobalConfig | null>(null);
+  // ✅ 移除 hasAutoInited，不再需要自动初始化逻辑
+  // const hasAutoInited = useRef(false);
   const prevMessageCountRef = useRef(0);
   const prevMessageSigRef = useRef<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -144,46 +126,10 @@ export function DevicePanel({
     };
   }, []);
 
-  const handleInit = useCallback(
-    async (force: boolean = false) => {
-      if (!config) return;
+  // ✅ 移除 handleInit 函数，不再需要显式初始化
+  // Agent 会在首次发送消息时自动初始化
 
-      try {
-        await initAgent({
-          model_config: {
-            base_url: config.base_url || undefined,
-            api_key: config.api_key || undefined,
-            model_name: config.model_name || undefined,
-          },
-          agent_config: {
-            device_id: deviceId,
-          },
-          agent_type: config.agent_type,
-          agent_config_params: config.agent_config_params,
-          force,
-        });
-        setInitialized(true);
-        setError(null);
-      } catch (err) {
-        const errorMessage = getErrorMessage(err);
-        setError(errorMessage);
-        // 如果是强制重新初始化失败，后端已回滚删除了原有 agent，
-        // 需要将 initialized 设为 false 保持状态一致
-        if (force) {
-          setInitialized(false);
-        }
-      }
-    },
-    [deviceId, config]
-  );
-
-  // Auto-initialize on mount if configured
-  useEffect(() => {
-    if (isConfigured && config && !initialized && !hasAutoInited.current) {
-      hasAutoInited.current = true;
-      handleInit();
-    }
-  }, [isConfigured, config, initialized, handleInit]);
+  // ✅ 移除自动初始化 useEffect，不再需要
 
   // Load history items when popover opens
   useEffect(() => {
@@ -244,38 +190,15 @@ export function DevicePanel({
     setHistoryItems(prev => prev.filter(item => item.id !== itemId));
   };
 
-  // Re-initialize when config changes (for already initialized devices)
-  useEffect(() => {
-    // Skip if not initialized yet or no config
-    if (!initialized || !config) return;
-
-    // Check if config actually changed
-    const prevConfig = prevConfigRef.current;
-    if (
-      prevConfig &&
-      (prevConfig.base_url !== config.base_url ||
-        prevConfig.model_name !== config.model_name ||
-        prevConfig.api_key !== config.api_key ||
-        prevConfig.agent_type !== config.agent_type)
-    ) {
-      // Config changed, force re-initialize to apply new settings
-      console.log(
-        `[DevicePanel] Config changed for device ${deviceId}, force re-initializing...`
-      );
-      handleInit(true);
-    }
-
-    // Update previous config
-    prevConfigRef.current = config;
-  }, [config, initialized, deviceId, handleInit]);
+  // Note: Configuration is now managed entirely by backend ConfigManager.
+  // If user updates config via Settings, they need to manually re-initialize agents.
 
   const handleSend = useCallback(async () => {
     const inputValue = input.trim();
     if (!inputValue || loading) return;
 
-    if (!initialized) {
-      await handleInit();
-    }
+    // ✅ 移除初始化检查，后端会自动初始化
+    // Agent 会在首次使用时自动创建
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -475,11 +398,11 @@ export function DevicePanel({
   }, [
     input,
     loading,
-    initialized,
+    // initialized, // ✅ 移除依赖
     deviceId,
     deviceSerial,
     deviceName,
-    handleInit,
+    // handleInit, // ✅ 移除依赖
   ]);
 
   const handleReset = useCallback(async () => {
@@ -719,24 +642,10 @@ export function DevicePanel({
               </PopoverContent>
             </Popover>
 
-            {!isConfigured ? (
+            {!isConfigured && (
               <Badge variant="warning">
                 <AlertCircle className="w-3 h-3 mr-1" />
                 {t.devicePanel.noConfig}
-              </Badge>
-            ) : !initialized ? (
-              <Button
-                onClick={() => handleInit()}
-                disabled={!isConfigured || !config}
-                size="sm"
-                variant="twitter"
-              >
-                {t.devicePanel.initializing}
-              </Button>
-            ) : (
-              <Badge variant="success">
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                {t.devicePanel.ready}
               </Badge>
             )}
 
@@ -917,9 +826,7 @@ export function DevicePanel({
               placeholder={
                 !isConfigured
                   ? t.devicePanel.configureFirst
-                  : !initialized
-                    ? t.devicePanel.initDeviceFirst
-                    : t.devicePanel.whatToDo
+                  : t.devicePanel.whatToDo
               }
               disabled={loading}
               className="flex-1 min-h-[40px] max-h-[120px] resize-none"

@@ -2,73 +2,11 @@
 
 import re
 
-from pydantic import BaseModel, Field, field_validator
-
-
-class APIModelConfig(BaseModel):
-    """API layer model configuration (Pydantic).
-
-    This will be converted to AutoGLM_GUI.config.ModelConfig internally.
-    """
-
-    base_url: str | None = None
-    api_key: str | None = None
-    model_name: str | None = None
-    max_tokens: int = 3000
-    temperature: float = 0.0
-    top_p: float = 0.85
-    frequency_penalty: float = 0.2
-
-    @field_validator("base_url")
-    @classmethod
-    def validate_base_url(cls, v: str | None) -> str | None:
-        """验证 base_url 格式."""
-        if v is None:
-            return v
-        v = v.strip()
-        if not v:
-            return None
-        # 检查是否是有效的 HTTP/HTTPS URL
-        if not re.match(r"^https?://", v):
-            raise ValueError("base_url must start with http:// or https://")
-        return v
-
-
-class APIAgentConfig(BaseModel):
-    """API layer agent configuration (Pydantic).
-
-    This will be converted to AutoGLM_GUI.config.AgentConfig internally.
-    """
-
-    max_steps: int = 100
-    device_id: str | None = None
-    lang: str = "cn"
-    system_prompt: str | None = None
-    verbose: bool = True
-
-    @field_validator("max_steps")
-    @classmethod
-    def validate_max_steps(cls, v: int) -> int:
-        """验证 max_steps 范围."""
-        if v <= 0:
-            raise ValueError("max_steps must be positive")
-        if v > 1000:
-            raise ValueError("max_steps must be <= 1000")
-        return v
-
-    @field_validator("lang")
-    @classmethod
-    def validate_lang(cls, v: str) -> str:
-        """验证 lang 有效性."""
-        allowed_langs = ["cn", "en"]
-        if v not in allowed_langs:
-            raise ValueError(f"lang must be one of {allowed_langs}")
-        return v
+from pydantic import BaseModel, field_validator
 
 
 class InitRequest(BaseModel):
-    model: APIModelConfig | None = Field(default=None, alias="model_config")
-    agent: APIAgentConfig | None = Field(default=None, alias="agent_config")
+    device_id: str  # Device ID (required)
 
     # Agent configuration (factory pattern)
     agent_type: str = "glm"  # Agent type to use (e.g., "glm", "mai")
@@ -358,6 +296,11 @@ class ConfigResponse(BaseModel):
     # Agent 执行配置
     default_max_steps: int = 100  # 单次任务最大执行步数
 
+    # 决策模型配置（用于分层代理）
+    decision_base_url: str | None = None
+    decision_model_name: str | None = None
+    decision_api_key: str | None = None
+
     conflicts: list[dict] | None = None  # 配置冲突信息（可选）
 
 
@@ -374,6 +317,11 @@ class ConfigSaveRequest(BaseModel):
 
     # Agent 执行配置
     default_max_steps: int | None = None  # 单次任务最大执行步数
+
+    # 决策模型配置（用于分层代理）
+    decision_base_url: str | None = None
+    decision_model_name: str | None = None
+    decision_api_key: str | None = None
 
     @field_validator("default_max_steps")
     @classmethod
@@ -405,6 +353,26 @@ class ConfigSaveRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError("model_name cannot be empty")
         return v.strip()
+
+    @field_validator("decision_base_url")
+    @classmethod
+    def validate_decision_base_url(cls, v: str | None) -> str | None:
+        """验证 decision_base_url 格式."""
+        if v is not None and v.strip():
+            if not re.match(r"^https?://", v):
+                raise ValueError(
+                    "decision_base_url must start with http:// or https://"
+                )
+            return v.rstrip("/")
+        return None
+
+    @field_validator("decision_model_name")
+    @classmethod
+    def validate_decision_model_name(cls, v: str | None) -> str | None:
+        """验证 decision_model_name 非空."""
+        if v is not None and v.strip():
+            return v.strip()
+        return None
 
 
 class WiFiConnectRequest(BaseModel):
@@ -719,3 +687,13 @@ class RemoteDeviceRemoveResponse(BaseModel):
     success: bool
     message: str
     error: str | None = None
+
+
+class ReinitAllAgentsResponse(BaseModel):
+    """批量重新初始化 agent 响应."""
+
+    success: bool
+    total: int
+    succeeded: list[str]
+    failed: dict[str, str]
+    message: str
