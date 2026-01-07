@@ -91,7 +91,81 @@ uvx autoglm-gui
 
 ## 🚀 快速开始
 
-## 🎯 模型服务配置
+### 前置要求
+
+- Android 设备（Android 11+ 支持完全无线配对，无需数据线）
+- 一个 OpenAI 兼容的 API 端点（支持智谱 BigModel、ModelScope 或自建服务）
+
+**关于设备连接**：
+- **Android 11+**：支持二维码扫码配对，完全无需数据线即可连接和控制设备
+- **Android 10 及更低版本**：需要先通过 USB 数据线连接并开启无线调试，之后可拔掉数据线无线使用
+
+### 方式一：Python 包安装（推荐）
+
+**无需手动准备环境，直接安装运行：**
+
+```bash
+# 通过 pip 安装并启动
+pip install autoglm-gui
+autoglm-gui --base-url http://localhost:8080/v1
+```
+
+也可以使用 uvx 免安装启动，自动启动最新版（需已安装 uv，[安装教程](https://docs.astral.sh/uv/getting-started/installation/)）：
+
+```bash
+uvx autoglm-gui --base-url http://localhost:8080/v1
+```
+
+### 方式二：Docker 部署
+
+AutoGLM-GUI 提供预构建的 Docker 镜像，支持 `linux/amd64` 和 `linux/arm64` 架构，适合服务器端远程控制 Android 设备的场景。
+
+**使用 docker-compose（推荐）：**
+
+```bash
+# 1. 下载 docker-compose.yml
+curl -O https://raw.githubusercontent.com/suyiiyii/AutoGLM-GUI/main/docker-compose.yml
+
+# 2. 启动服务
+docker-compose up -d
+
+# 3. 访问 http://localhost:8000，在 Web 界面中配置模型 API
+```
+
+**或直接使用 docker run：**
+
+```bash
+# 使用 host 网络模式运行（推荐）
+docker run -d --network host \
+  -v autoglm_config:/root/.config/autoglm \
+  -v autoglm_logs:/app/logs \
+  ghcr.io/suyiiyii/autoglm-gui:main
+
+# 访问 http://localhost:8000，在 Web 界面中配置模型 API
+```
+
+**配置说明**：
+- 默认使用 host 网络模式（推荐，便于 ADB 设备发现和二维码配对）
+- 模型 API 配置可以在 Web 界面的设置页面中完成，无需提前配置环境变量
+- 如果需要在启动时预配置，可以编辑 `docker-compose.yml` 取消注释 `environment` 部分
+
+**连接远程设备**：
+
+Docker 容器中连接 Android 设备推荐使用 **WiFi 调试**：
+
+1. 在 Android 设备上开启「开发者选项」→「无线调试」
+2. 记录设备的 IP 地址和端口号
+3. 在 Web 界面点击「添加无线设备」→ 输入 IP:端口 → 连接
+
+> ⚠️ **注意**：二维码配对功能依赖 mDNS 多播，在 Docker bridge 网络中可能受限。**强烈建议使用 `--network host` 模式**以获得完整功能支持。
+
+**更多 Docker 配置选项**，请参见下方的 [Docker 部署详细说明](#-docker-部署详细说明)。
+
+---
+
+启动后，在浏览器中打开 http://localhost:8000 即可开始使用！
+
+### 🎯 模型服务配置
 
 AutoGLM-GUI 只需要一个 OpenAI 兼容的模型服务。你可以：
 
@@ -121,50 +195,6 @@ autoglm-gui \
 pip install autoglm-gui
 autoglm-gui --base-url http://localhost:8000/v1 --model autoglm-phone-9b
 ```
-
-### 前置要求
-
-- Python 3.10+
-- Android 设备（Android 11+ 支持完全无线配对，无需数据线）
-- 已安装 ADB 并添加到系统 PATH（桌面版已内置）
-- 一个 OpenAI 兼容的 API 端点
-
-**关于设备连接**：
-- **Android 11+**：支持二维码扫码配对，完全无需数据线即可连接和控制设备
-- **Android 10 及更低版本**：需要先通过 USB 数据线连接并开启无线调试，之后可拔掉数据线无线使用
-
-### 快捷运行（推荐）
-
-**无需手动准备环境，直接安装运行：**
-
-```bash
-# 通过 pip 安装并启动
-pip install autoglm-gui
-autoglm-gui --base-url http://localhost:8080/v1
-```
-
-也可以使用 uvx 免安装启动，自动启动最新版（需已安装 uv，[安装教程](https://docs.astral.sh/uv/getting-started/installation/)）：
-
-```bash
-uvx autoglm-gui --base-url http://localhost:8080/v1
-```
-
-### 传统安装
-
-```bash
-# 从源码安装
-git clone https://github.com/your-repo/AutoGLM-GUI.git
-cd AutoGLM-GUI
-uv sync
-
-# 构建前端（必须）
-uv run python scripts/build.py
-
-# 启动服务
-uv run autoglm-gui --base-url http://localhost:8080/v1
-```
-
-启动后，在浏览器中打开 http://localhost:8000 即可开始使用！
 
 ## 🔄 升级指南
 
@@ -340,6 +370,25 @@ AutoGLM-GUI 提供了两种不同的代理工作模式，适用于不同的使�
 
 ## 🛠️ 开发指南
 
+### 源码安装
+
+如果你需要从源码进行开发或定制，可以按照以下步骤：
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/suyiiyii/AutoGLM-GUI.git
+cd AutoGLM-GUI
+
+# 2. 安装依赖
+uv sync
+
+# 3. 构建前端（必须）
+uv run python scripts/build.py
+
+# 4. 启动服务
+uv run autoglm-gui --base-url http://localhost:8080/v1
+```
+
 ### 快速开发
 
 ```bash
@@ -360,40 +409,11 @@ uv run python scripts/build.py
 uv run python scripts/build.py --pack
 ```
 
-## 🐳 Docker 部署
+## 🐳 Docker 部署详细说明
 
-AutoGLM-GUI 提供预构建的 Docker 镜像，支持 `linux/amd64` 和 `linux/arm64` 架构，适合服务器端远程控制 Android 设备的场景。
+> 💡 **提示**：Docker 部署已整合到 [快速开始](#-快速开始) 部分，推荐直接查看上方的"方式二：Docker 部署"说明。
 
-### 方式一：使用 docker-compose（推荐）
-
-```bash
-# 1. 下载 docker-compose.yml
-curl -O https://raw.githubusercontent.com/suyiiyii/AutoGLM-GUI/main/docker-compose.yml
-
-# 2. 启动服务
-docker-compose up -d
-
-# 3. 访问 http://localhost:8000，在 Web 界面中配置模型 API
-```
-
-**配置说明**：
-- 默认使用 host 网络模式（推荐，便于 ADB 设备发现和二维码配对）
-- 模型 API 配置可以在 Web 界面的设置页面中完成，无需提前配置环境变量
-- 如果需要在启动时预配置，可以编辑 `docker-compose.yml` 取消注释 `environment` 部分
-
-### 方式二：直接使用 docker run
-
-使用 GitHub Container Registry (GHCR) 预构建镜像：
-
-```bash
-# 使用 host 网络模式运行（推荐）
-docker run -d --network host \
-  -v autoglm_config:/root/.config/autoglm \
-  -v autoglm_logs:/app/logs \
-  ghcr.io/suyiiyii/autoglm-gui:main
-
-# 访问 http://localhost:8000，在 Web 界面中配置模型 API
-```
+本节提供更多 Docker 配置选项和高级用法。
 
 ### 指定监听端口
 
@@ -432,16 +452,6 @@ docker run -d -p 9000:8000 \
 | `AUTOGLM_BASE_URL` | 模型 API 地址 | (必填) |
 | `AUTOGLM_MODEL_NAME` | 模型名称 | `autoglm-phone` |
 | `AUTOGLM_API_KEY` | API 密钥 | (必填) |
-
-### 连接远程设备
-
-Docker 容器中连接 Android 设备推荐使用 **WiFi 调试**：
-
-1. 在 Android 设备上开启「开发者选项」→「无线调试」
-2. 记录设备的 IP 地址和端口号
-3. 在 Web 界面点击「添加无线设备」→ 输入 IP:端口 → 连接
-
-> ⚠️ **注意**：二维码配对功能依赖 mDNS 多播，在 Docker bridge 网络中可能受限。**强烈建议使用 `--network host` 模式**以获得完整功能支持。
 
 ### 健康检查
 
