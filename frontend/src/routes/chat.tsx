@@ -961,6 +961,8 @@ function ChatComponent() {
         onOpenConfig={() => setShowConfig(true)}
         onConnectWifi={handleConnectWifi}
         onDisconnectWifi={handleDisconnectWifi}
+        onRefreshDevices={loadDevices}
+        showToast={showToast}
       />
 
       {/* Main content */}
