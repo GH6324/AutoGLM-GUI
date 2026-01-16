@@ -61,8 +61,18 @@ class AsyncGLMAgent:
         # 取消机制
         self._cancel_event = asyncio.Event()
 
+        # 初始化 system prompt（Agent 一创建就有"人格"）
+        system_prompt = self.agent_config.system_prompt
+        if system_prompt is None:
+            system_prompt = get_system_prompt(self.agent_config.lang)
+
+        # 保存初始 system message 用于 reset()
+        self._initial_system_message = MessageBuilder.create_system_message(
+            system_prompt
+        )
+
         # 状态
-        self._context: list[dict[str, Any]] = []
+        self._context: list[dict[str, Any]] = [self._initial_system_message]
         self._step_count = 0
         self._is_running = False
 
@@ -82,35 +92,46 @@ class AsyncGLMAgent:
         - "cancelled": {"message": str}
         - "error": {"message": str}
         """
-        self._context = []
-        self._step_count = 0
         self._is_running = True
         self._cancel_event.clear()
 
         try:
-            # 首步执行
-            async for event in self._execute_step_async(task, is_first=True):
-                yield event
+            # ===== 初始化阶段：添加首次用户输入 =====
+            try:
+                screenshot = await asyncio.to_thread(self.device.get_screenshot)
+                current_app = await asyncio.to_thread(self.device.get_current_app)
+            except Exception as e:
+                logger.error(f"Failed to get device info during initialization: {e}")
+                yield {
+                    "type": "error",
+                    "data": {"message": f"Device error: {e}"},
+                }
+                yield {
+                    "type": "done",
+                    "data": {
+                        "message": f"Device error: {e}",
+                        "steps": 0,
+                        "success": False,
+                    },
+                }
+                return
 
-                # 检查是否完成
-                if event["type"] == "step" and event["data"].get("finished"):
-                    yield {
-                        "type": "done",
-                        "data": {
-                            "message": event["data"].get("message", "Task completed"),
-                            "steps": self._step_count,
-                            "success": event["data"].get("success", True),
-                        },
-                    }
-                    return
+            screen_info = MessageBuilder.build_screen_info(current_app)
+            initial_message = f"{task}\n\n** Screen Info **\n\n{screen_info}"
 
-            # 后续步骤
+            self._context.append(
+                MessageBuilder.create_user_message(
+                    text=initial_message, image_base64=screenshot.base64_data
+                )
+            )
+
+            # ===== 执行阶段：循环执行步骤 =====
             while self._step_count < self.agent_config.max_steps and self._is_running:
                 # 检查取消
                 if self._cancel_event.is_set():
                     raise asyncio.CancelledError()
 
-                async for event in self._execute_step_async(None, is_first=False):
+                async for event in self._execute_step_async():
                     yield event
 
                     # 检查是否完成
@@ -147,21 +168,19 @@ class AsyncGLMAgent:
         finally:
             self._is_running = False
 
-    async def _execute_step_async(
-        self, user_prompt: str | None, is_first: bool
-    ) -> AsyncIterator[dict[str, Any]]:
+    async def _execute_step_async(self) -> AsyncIterator[dict[str, Any]]:
         """执行单步，支持流式输出和取消。
 
-        Args:
-            user_prompt: 用户输入（首步必需，后续可选）
-            is_first: 是否是首步
+        注意：不再需要 user_prompt 参数，因为：
+        - 首次用户输入已在 stream() 的初始化阶段添加
+        - 此方法只负责执行步骤：获取屏幕 → 调用 LLM → 执行动作
 
         Yields:
             dict[str, Any]: 事件字典
         """
         self._step_count += 1
 
-        # 1. 截图和获取当前应用（使用线程池）
+        # 1. 获取当前屏幕状态（使用线程池）
         try:
             screenshot = await asyncio.to_thread(self.device.get_screenshot)
             current_app = await asyncio.to_thread(self.device.get_current_app)
@@ -184,42 +203,21 @@ class AsyncGLMAgent:
             }
             return
 
-        # 2. 构建消息
-        if is_first:
-            system_prompt = self.agent_config.system_prompt
-            if system_prompt is None:
-                system_prompt = get_system_prompt(self.agent_config.lang)
+        # 2. 构建消息（统一格式：只有屏幕信息）
+        screen_info = MessageBuilder.build_screen_info(current_app)
+        text_content = f"** Screen Info **\n\n{screen_info}"
 
-            self._context.append(MessageBuilder.create_system_message(system_prompt))
-
-            screen_info = MessageBuilder.build_screen_info(current_app)
-            text_content = f"{user_prompt}\n\n{screen_info}"
-
-            self._context.append(
-                MessageBuilder.create_user_message(
-                    text=text_content, image_base64=screenshot.base64_data
-                )
+        self._context.append(
+            MessageBuilder.create_user_message(
+                text=text_content, image_base64=screenshot.base64_data
             )
-        else:
-            screen_info = MessageBuilder.build_screen_info(current_app)
-            if user_prompt:
-                text_content = f"{user_prompt}\n\n** Screen Info **\n\n{screen_info}"
-            else:
-                text_content = f"** Screen Info **\n\n{screen_info}"
-
-            self._context.append(
-                MessageBuilder.create_user_message(
-                    text=text_content, image_base64=screenshot.base64_data
-                )
-            )
+        )
 
         # 3. 流式调用 OpenAI（真正的异步，可取消）
         try:
             if self.agent_config.verbose:
                 msgs = get_messages(self.agent_config.lang)
-                print("\n" + "=" * 50)
-                print(f"💭 {msgs['thinking']}:")
-                print("-" * 50)
+                logger.debug(f"💭 {msgs['thinking']}:")
 
             thinking_parts = []
             raw_content = ""
@@ -240,7 +238,7 @@ class AsyncGLMAgent:
 
                     # Verbose output
                     if self.agent_config.verbose:
-                        print(chunk_data["content"], end="", flush=True)
+                        logger.debug(chunk_data["content"])
 
                 elif chunk_data["type"] == "raw":
                     raw_content += chunk_data["content"]
@@ -254,7 +252,7 @@ class AsyncGLMAgent:
         except Exception as e:
             logger.error(f"LLM error: {e}")
             if self.agent_config.verbose:
-                traceback.print_exc()
+                logger.debug(traceback.format_exc())
 
             yield {
                 "type": "error",
@@ -285,11 +283,8 @@ class AsyncGLMAgent:
 
         if self.agent_config.verbose:
             msgs = get_messages(self.agent_config.lang)
-            print()
-            print("-" * 50)
-            print(f"🎯 {msgs['action']}:")
-            print(json.dumps(action, ensure_ascii=False, indent=2))
-            print("=" * 50 + "\n")
+            logger.debug(f"🎯 {msgs['action']}:")
+            logger.debug(json.dumps(action, ensure_ascii=False, indent=2))
 
         # 5. 执行 action（使用线程池）
         try:
@@ -299,7 +294,7 @@ class AsyncGLMAgent:
         except Exception as e:
             logger.error(f"Action execution error: {e}")
             if self.agent_config.verbose:
-                traceback.print_exc()
+                logger.debug(traceback.format_exc())
             result = ActionResult(success=False, should_finish=True, message=str(e))
 
         # 6. 更新上下文
@@ -316,11 +311,9 @@ class AsyncGLMAgent:
 
         if finished and self.agent_config.verbose:
             msgs = get_messages(self.agent_config.lang)
-            print("\n" + "🎉 " + "=" * 48)
-            print(
+            logger.debug(
                 f"✅ {msgs['task_completed']}: {result.message or action.get('message', msgs['done'])}"
             )
-            print("=" * 50 + "\n")
 
         # 8. 返回步骤结果
         yield {
@@ -452,8 +445,8 @@ class AsyncGLMAgent:
         logger.info("AsyncGLMAgent cancelled by user")
 
     def reset(self) -> None:
-        """重置状态。"""
-        self._context = []
+        """重置状态（恢复到初始状态，保留 system message）。"""
+        self._context = [self._initial_system_message]
         self._step_count = 0
         self._is_running = False
         self._cancel_event.clear()
@@ -482,12 +475,31 @@ class AsyncGLMAgent:
         Returns:
             StepResult: 步骤结果
         """
-        is_first = len(self._context) == 0
-        if is_first and not task:
-            raise ValueError("Task is required for the first step")
+        is_first_execution = len(self._context) == 1  # 只有 system message
+        if is_first_execution:
+            if not task:
+                raise ValueError("Task is required for the first step")
 
+            # 首次执行：需要先添加用户输入
+            try:
+                screenshot = await asyncio.to_thread(self.device.get_screenshot)
+                current_app = await asyncio.to_thread(self.device.get_current_app)
+            except Exception as e:
+                logger.error(f"Failed to get device info during initialization: {e}")
+                raise RuntimeError(f"Device error: {e}") from e
+
+            screen_info = MessageBuilder.build_screen_info(current_app)
+            initial_message = f"{task}\n\n** Screen Info **\n\n{screen_info}"
+
+            self._context.append(
+                MessageBuilder.create_user_message(
+                    text=initial_message, image_base64=screenshot.base64_data
+                )
+            )
+
+        # 执行步骤
         result = None
-        async for event in self._execute_step_async(task, is_first):
+        async for event in self._execute_step_async():
             if event["type"] == "step":
                 result = StepResult(
                     thinking=event["data"]["thinking"],
