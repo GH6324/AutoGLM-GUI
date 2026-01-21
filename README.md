@@ -67,6 +67,7 @@
 - **实时屏幕预览** - 基于 scrcpy 的低延迟视频流，随时查看设备正在执行的操作
 - **直接操控手机** - 在实时画面上直接点击、滑动操作，支持精准坐标转换和视觉反馈
 - **零配置部署** - 支持任何 OpenAI 兼容的 LLM API
+- **MCP 协议支持** - 🆕 内置 MCP 服务器，可集成到 Claude Desktop、Cursor 等 AI 应用中
 - **ADB 深度集成** - 通过 Android Debug Bridge 直接控制设备（支持 USB 和 WiFi）
 - **模块化界面** - 清晰的侧边栏 + 设备面板设计，功能分离明确
 
@@ -586,6 +587,186 @@ uv run python scripts/build.py
 
 # 构建完整包
 uv run python scripts/build.py --pack
+```
+
+## 🔌 MCP (Model Context Protocol) 集成
+
+AutoGLM-GUI 内置了 MCP 服务器，可以作为一个工具集成为其他 AI 应用（如 Claude Desktop、Cline、Cursor 等）提供 Android 设备自动化能力。
+
+### 什么是 MCP？
+
+MCP (Model Context Protocol) 是一个开放协议，允许 AI 应用连接到外部数据源和工具。通过 MCP，你可以让 Claude、Cursor 等 AI 直接操作你的 Android 设备。
+
+### MCP Tools
+
+AutoGLM-GUI 提供了两个 MCP 工具：
+
+#### 1. `chat(device_id, message)` - 执行手机任务
+
+向指定设备发送自动化任务，AI 会控制手机完成操作。
+
+**参数**：
+- `device_id`：设备标识符（如 "192.168.1.100:5555" 或设备序列号）
+- `message`：自然语言任务描述（如 "打开微信"、"发送消息"）
+
+**特点**：
+- ✅ 自动初始化设备（使用全局配置）
+- ✅ **Fail-Fast 策略**：找不到元素立即报错，不猜测坐标
+- ✅ **5 步限制**：适合原子操作，避免无限循环
+- ✅ **专用 Prompt**：优化为快速执行模式
+
+#### 2. `list_devices()` - 列出已连接设备
+
+获取所有已连接的 ADB 设备列表及其状态。
+
+**返回信息**：
+- 设备 ID、型号
+- 连接类型（USB/WiFi）
+- 在线状态
+- Agent 初始化状态
+
+### 使用场景
+
+**典型应用**：
+- 🤝 **Claude Desktop**：让 Claude 直接操作你的 Android 设备
+- 💻 **IDE 集成**：在 Cursor、VS Code (Cline) 中调用手机自动化
+- 🔄 **工作流集成**：作为 AI Agent 工具链的一环
+- 🧪 **自动化测试**：结合 AI 进行移动端 UI 测试
+
+**示例**：
+```
+用户：帮我在手机上打开微信，给张三发消息"下午三点开会"
+
+AI：
+1. 调用 list_devices() 找到设备
+2. 调用 chat(device_id, "打开微信")
+3. 调用 chat(device_id, "搜索联系人张三")
+4. 调用 chat(device_id, "发送消息：下午三点开会")
+```
+
+### 配置 MCP 客户端
+
+#### Claude Desktop 配置
+
+1. **启动 AutoGLM-GUI**（确保 MCP 端点可访问）：
+
+```bash
+# 使用默认 MCP 端点（挂载在 /mcp）
+autoglm-gui --base-url http://localhost:8080/v1
+```
+
+2. **编辑 Claude Desktop 配置文件**：
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+添加以下配置：
+
+```json
+{
+  "mcpServers": {
+    "autoglm-gui": {
+      "transport": {
+        "type": "http",
+        "url": "http://localhost:8000/mcp"
+      }
+    }
+  }
+}
+```
+
+3. **重启 Claude Desktop**，即可在对话中使用 AutoGLM-GUI 工具。
+
+#### Cline (VS Code) 配置
+
+在 VS Code 设置中搜索 "cline"，添加 MCP 服务器配置：
+
+```json
+{
+  "cline.mcpServers": {
+    "autoglm-gui": {
+      "transport": {
+        "type": "http",
+        "url": "http://localhost:8000/mcp"
+      }
+    }
+  }
+}
+```
+
+#### Cursor 配置
+
+在 Cursor 设置中添加 MCP 服务器（设置 → MCP Servers）：
+
+```json
+{
+  "mcpServers": {
+    "autoglm-gui": "http://localhost:8000/mcp"
+  }
+}
+```
+
+### MCP 端点说明
+
+AutoGLM-GUI 的 MCP 服务器通过 HTTP 端点暴露：
+
+- **Base URL**：`http://localhost:8000/mcp`
+- **传输协议**：HTTP + SSE (Server-Sent Events)
+- **端口**：跟随主服务端口（默认 8000）
+
+**端点路径**：
+- `/mcp/sse` - SSE 传输端点
+- `/mcp/messages` - 消息端点
+
+### 技术架构
+
+**实现方式**：
+- 基于 **FastMCP** 库构建
+- MCP HTTP App 挂载到 FastAPI 的根路径 `/`
+- 使用 ASGI 应用集成，与 FastAPI 生命周期合并
+- 设备锁管理：使用 `PhoneAgentManager.use_agent` 上下文管理器
+
+**专用 Prompt 特性**：
+- **Fail-Fast**：找不到元素立即报错，禁止猜测坐标
+- **Step Limit**：5 步未完成自动中断
+- **目标验证**：执行前必须确认元素在屏幕上可见
+- **错误规范**：使用 `ELEMENT_NOT_FOUND` 和 `STEP_LIMIT_EXCEEDED` 标准化错误
+
+### 最佳实践
+
+1. **原子任务**：MCP 的 `chat` 工具设计用于执行原子操作（5 步内完成），复杂任务应拆分为多个子任务
+2. **设备管理**：使用 `list_devices()` 先确认设备在线，再执行操作
+3. **错误处理**：AI 应捕获 `ELEMENT_NOT_FOUND` 错误，调整策略后重试
+4. **性能优化**：MCP 调用优先使用本地 API（如 vLLM/SGLang），减少网络延迟
+
+### 示例对话
+
+**在 Claude Desktop 中**：
+
+```
+用户：帮我查一下手机上有几台设备连接了
+
+Claude：我调用 list_devices() 工具查看一下...
+
+[MCP 工具调用] list_devices()
+
+结果：发现 1 台设备
+- 设备 ID: emulator-5554
+- 型号: sdk_gphone64_x86_64
+- 状态: 在线
+
+用户：在模拟器上打开设置应用
+
+Claude：我调用 chat 工具来操作设备...
+
+[MCP 工具调用] chat("emulator-5554", "打开设置应用")
+
+执行结果：✅ 已完成
+步骤 1: Launch(app="设置")
+步骤 2: 等待应用加载
+步骤 3: 完成
+
+设置应用已成功打开。
 ```
 
 ## 🐳 Docker 部署详细说明
